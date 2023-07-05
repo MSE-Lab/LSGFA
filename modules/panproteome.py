@@ -39,16 +39,14 @@ class Proteome(list):
     @staticmethod
     def hmmscan(protein, evalue):
         in_temp = NamedTemporaryFile(mode='w', delete=False)
-        in_temp.write(f'>{protein.name}\n')
-        in_temp.write(f'{protein.sequence}')
-        out_temp = NamedTemporaryFile(mode='w')
-        cmd = ["hmmscan", "--domtblout", out_temp.name, "-E", evalue, " --domE", evalue, pfamDB, in_temp.name]
-        print(" ".join(cmd))
+        in_temp.write(f'>{protein.name}\n{protein.sequence}')
+        in_temp.close()
+        cmd = ["hmmscan", "-E", "1e-5", "--domE", "1e-5", "--domtblout", "out1", pfamDB, in_temp.name]
         cap = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         cap.wait()
-        for e in cap.stdout:
+        print(cap.returncode)
+        for e in cap.stderr:
             print(e)
-        # queue.put(cap.returncode)
 
     @staticmethod
     def get_results(queue):
