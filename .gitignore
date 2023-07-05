@@ -3,6 +3,13 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# pfam
+*.hmm
+*.h3f
+*.h3i
+*.h3m
+*.h3p
+
 # C extensions
 *.so
 
