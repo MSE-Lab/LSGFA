@@ -28,7 +28,8 @@ class Hits(list):
             ilist = [_ for _ in i.split(' ') if _ is not '']
             pfam_name = ilist[0]
             pfam_id = ilist[1]
-            aPfam = Pfam(name=pfam_name, id=pfam_id)
+            pfam_length = ilist[3]
+            aPfam = Pfam(name=pfam_name, id=pfam_id, length=pfam_length)
             self.append(aPfam)
 
     def ana_relations(self):
