@@ -42,4 +42,5 @@ class Hits(list):
 
     def ana_relations(self):
         # 用于判断这个Hit里要保留哪个pfam
+
         pass
