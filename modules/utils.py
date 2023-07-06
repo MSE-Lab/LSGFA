@@ -1,6 +1,7 @@
 import subprocess
 import time
 import sys
+from tempfile import NamedTemporaryFile
 
 
 def timing():
@@ -29,19 +30,10 @@ def message(text, label='', depart=False, sleep_time=0):
         sys.exit(0)
 
 
-def run_command(cmd):
-    """
-    Test command, if stderr info get out, test result is negative
-    :param cmd: command
-    :return:
-    """
-    cap = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    sdo = [x for x in cap.stdout]
-    sde = [x for x in cap.stderr]
-    if len(sdo) > 0 and len(sde) == 0:
-        message("test run '%s' - successful" % cmd)
-        return True
+def make_temp_file(prefix, close=False):
+    temp = NamedTemporaryFile(mode='w', prefix=prefix, delete=False)
+    if close:
+        temp.close()
     else:
-        message("test run '%s' - failed" % cmd)
-        return False
-
+        pass
+    return temp
