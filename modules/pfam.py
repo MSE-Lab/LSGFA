@@ -12,9 +12,17 @@ class Pfam:
         self.hitlength = hitlength
 
     def relation(self, other):
-        # 用于计算两个pfam之间的关系
-        return
-
+        # 处理两个Pfam之间的关系
+        if self.hitlength >= other.hitlength:
+            long = self
+            short = other
+        else:
+            long = other
+            short = self
+        if int(long.start) >= int(short.end) or int(long.end) <= int(short.start):  # 独立的两个
+            return True
+        else:  # 当两个为包含、相等或overlap时
+            return False
 
 class Hits(list):
 
@@ -41,6 +49,24 @@ class Hits(list):
             self.append(aPfam)
 
     def ana_relations(self):
-        # 用于判断这个Hit里要保留哪个pfam
-
-        pass
+        """
+        处理一个Hit里的所有Pfam，保留相互独立的pfam，且每个pfam都是最长的
+        :return: 一个list，里面的元素为Pfam对象
+        """
+        # 对列表按长度进行降序排列
+        sorted_list = sorted(self, key=lambda x: x.hitlength, reverse=True)
+        cleaned_list = [sorted_list[0]]
+        for i in range(1, len(sorted_list)):  # 从第二个开始比较
+            current_pfam = sorted_list[i]
+            independent = True
+            for j in range(len(cleaned_list)):  # 当前的pfam与clean_list中的pfam对比
+                existing_pfam = cleaned_list[j]
+                if Pfam.relation(current_pfam, existing_pfam) == False:  # 与已有的Pfam对象不独立
+                    if current_pfam.hitlength > existing_pfam.hitlength:
+                        cleaned_list[j] = current_pfam  # 替换为较长的Pfam对象
+                    else:
+                        independent = False
+                    break
+            if independent:
+                cleaned_list.append(current_pfam)
+        return cleaned_list
