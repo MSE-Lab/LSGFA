@@ -1,7 +1,7 @@
 import os
 import glob
-import subprocess
 from multiprocessing import Pool, Manager
+
 from pyfasta import Fasta
 
 from modules.pfam import *
@@ -12,7 +12,7 @@ pfamDB = os.path.join(os.getcwd(), 'modules', 'Pfam-A.hmm')
 
 class Protein:
 
-    def __init__(self, name: str = "", sequence: str = "", domain: Pfam = None):
+    def __init__(self, name: str = "", sequence: str = "", domain: list = None):
         self.name = name
         self.sequence = sequence
         self.domain = domain
@@ -20,12 +20,18 @@ class Protein:
     def __str__(self):
         return self.name
 
-    def _hmmscan(self, evalue):
+    def _hmm_profile(self, scan_out):
+        aHits = Hits(scan_out)
+        hits_clean = aHits.ana_relations()
+        self.domain = hits_clean
+
+    def _hmm_scan(self, evalue):
         in_temp = make_temp_file(prefix='in_', close=False)
         in_temp.write(f'>{self.name}\n{self.sequence}')
         in_temp.close()
         out_temp = make_temp_file(prefix='out_', close=True)
         cmd = ["hmmscan", "-E", evalue, "--domE", evalue, "--domtblout", out_temp.name, pfamDB, in_temp.name]
+        # cmd2 = ['hmmscan', '--cut_ga', '--domtblout', out_temp.name, pfamDB, in_temp.name]
         cap = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         cap.wait()
         if cap.returncode != 0:
@@ -35,17 +41,14 @@ class Protein:
         else:
             # remove input temporary sequence file
             os.unlink(in_temp.name)
+        self._hmm_profile(out_temp.name)
         return out_temp.name
 
-    @staticmethod
-    def _domain(hmmscan_result):
-        return
-
-    def pfam(self, queue, evalue='1e-5'):
-        out_hmmscan = self._hmmscan(evalue)
-        domain = self._domain(out_hmmscan)
-        self.domain = domain
-        queue.put(out_hmmscan)
+    def identify_pfam(self, queue, evalue='1e-5'):
+        out_hmmscan = self._hmm_scan(evalue)
+        os.unlink(out_hmmscan)
+        # 通过进程池 Protein.domain 似乎无法更新，所以吧结果put出来在进程池外再更新
+        queue.put((self.name, self.domain))
 
 
 class Proteome(list):
@@ -75,18 +78,20 @@ class Proteome(list):
         processes = Pool(processes=treads)
         aQueue = Manager().Queue()
         for protein in self:
-            processes.apply_async(protein.pfam, args=(aQueue, evalue))
+            processes.apply_async(protein.identify_pfam, args=(aQueue, evalue))
         processes.close()
-        result = list()
+        identified_pfams = dict()
         ntd = 0
         while True:
             a = aQueue.get(timeout=None)
-            result.append(a)
-            print(a)
+            identified_pfams[a[0]] = a[1]
             ntd += 1
             if ntd == self.size:
+                # 当从进程池队列中get的结果数量等于Proteome的size，即蛋白质序列数量时停止get结果
                 break
-        return result
+        for protein in self:
+            protein.domain = identified_pfams[protein.name]
+        return
 
 
 class Panproteome(list):
