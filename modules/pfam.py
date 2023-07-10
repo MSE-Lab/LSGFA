@@ -74,31 +74,3 @@ class Hits(list):
             if independent:
                 cleaned_list.append(current_pfam)
         return cleaned_list
-
-
-def orf_pfam(self):  # 这个self是一个list，每个元素的一个pfam的对象
-    # 建立各个pfam_id对应的orf_id, pfam_id为key
-    pf_dic = {}
-    for i in range(len(self)):
-        if self[i].id not in pf_dic:
-            pf_dic[self[i].id] = [self[i].orf]
-        else:
-            pf_dic[self[i].id].append(self[i].orf)
-    return pf_dic
-
-
-def get_edges(self: dict):  # 这个self是一个pf_dic的字典
-    """
-    获取不重复的orf_id，即点，和网络的edges，即边
-    :return: orf_id，edges
-    """
-    edges_set = set()
-    for pfam in self.keys():
-        if len(self[pfam]) > 1:
-            edges_set = edges_set | set(combinations(sorted(self[pfam]), 2))
-        # 对pfam对应的orf列表组合，然后取并集，得到所有边的情况
-        # sorted后可以消除(a,b)和(b,a)不一致的情况
-        else:
-            pass
-    edges = list(edges_set)
-    return edges
