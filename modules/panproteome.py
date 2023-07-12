@@ -6,7 +6,7 @@ from pyfasta import Fasta
 
 from modules.pfam import *
 from modules.utils import *
-from build_graph import *
+from modules.build_graph import *
 
 pfamDB = os.path.join(os.getcwd(), 'modules', 'Pfam-A.hmm')
 
@@ -71,12 +71,12 @@ class Proteome(list):
         self.name = os.path.basename(fasta_name).replace('.faa', '')
         self.size = len(self)
 
-    def search_pfam_domain(self, treads=60, evalue='1e-5'):
+    def search_pfam_domain(self, threads=60, evalue='1e-5'):
         """
         搜索Pfam-A.hmm
         :return:
         """
-        processes = Pool(processes=treads)
+        processes = Pool(processes=threads)
         aQueue = Manager().Queue()
         for protein in self:
             processes.apply_async(protein.identify_pfam, args=(aQueue, evalue))
@@ -103,38 +103,12 @@ class Panproteome(list):
             aProteome = Proteome(fasta_name=faa_file)
             self.append(aProteome)
 
-    def _identify_pfam(self, treads):
+    def _identify_pfam(self, threads):
         proteome: Proteome
         for proteome in self:
             message(text=f'identify Pfam for {proteome.name}')
-            proteome.search_pfam_domain(treads=treads)
-        self.member = glob.glob(os.path.join(f, '*.faa'))
-        self.proteomes = []
-        self._load_proteomes()
-        self.domains = []
-        self._get_all_domains()
+            proteome.search_pfam_domain(threads=threads)
 
-    def _load_proteomes(self):  # 实例化为Proteome对象
-        for file in self.member:
-            aProteome = Proteome(file)
-            self.proteomes.append(aProteome)
-
-    def _get_all_domains(self):
-        for proteome in self.proteomes:
-            proteome.search_pfam_domain()
-
-        all_domains = []
-        for proteome in self.proteomes:
-            for protein in proteome:
-                all_domains.append(protein.domain)
-        self.domains = all_domains
-
-    def graph(self):
-        vs_es = get_edges(self.domains)
-        vs = vs_es[0]
-        es = vs_es[1]
-        g = build_graph(vs, es)
-        return g
     def _write_out_pfam(self, outdir):
         for proteome in self:
             with open(os.path.join(os.getcwd(), outdir, f'{proteome.name}.pfam'), 'w') as out:
@@ -145,8 +119,9 @@ class Panproteome(list):
                         domains = 'None'
                     out.write(f'{protein.name}\t{domains}\n')
 
-    def make_pfam_graph(self, treads, outdir):
-        self._identify_pfam(treads=treads)
+    def make_pfam_graph(self, threads, outdir):
+        # 并行的运行hmmscan为每个proteome.faa鉴定pfam
+        self._identify_pfam(threads=threads)
+        # 每一个proteome.faa的pfam鉴定结果都写在./testdata目录下了
         self._write_out_pfam(outdir=outdir)
-        # 构建基于pfam的网络
-        return
+        # 从这里开始写构建网络的代码 @Ling
