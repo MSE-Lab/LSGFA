@@ -99,6 +99,29 @@ class Panproteome(list):
     def __init__(self, f):
         super().__init__()
         self.member = glob.glob(os.path.join(f, '*.faa'))
+        self.proteomes = []
+        self._load_proteomes()
+        self.domains = []
+        self._get_all_domains()
 
-    def func(self):
-        pass
+        def _load_proteomes(self):  # 实例化为Proteome对象
+            for file in self.member:
+                aProteome = Proteome(file)
+                self.proteomes.append(aProteome)
+
+        def _get_all_domains(self):
+            for proteome in self.proteomes:
+                proteome.search_pfam_domain()
+
+            all_domains = []
+            for proteome in self.proteomes:
+                for protein in proteome:
+                    all_domains.append(protein.domain)
+            self.domains = all_domains
+
+        def graph(self):
+            vs_es = get_edges(self.domains)
+            vs = vs_es[0]
+            es = vs_es[1]
+            g = build_graph(vs, es)
+            return g
