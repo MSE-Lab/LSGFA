@@ -125,3 +125,5 @@ class Panproteome(list):
         # 每一个proteome.faa的pfam鉴定结果都写在./testdata目录下了
         self._write_out_pfam(outdir=outdir)
         # 从这里开始写构建网络的代码 @Ling
+        # pfam的结果已经在testdata目录，可以通过从*.pfam读结果，然后建网络的功能
+        # 测试的时候把上面两句代码注释掉，跳过重新hmmscan的步骤
