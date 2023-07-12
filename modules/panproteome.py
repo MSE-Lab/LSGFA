@@ -6,6 +6,7 @@ from pyfasta import Fasta
 
 from modules.pfam import *
 from modules.utils import *
+from build_graph import *
 
 pfamDB = os.path.join(os.getcwd(), 'modules', 'Pfam-A.hmm')
 
@@ -107,7 +108,33 @@ class Panproteome(list):
         for proteome in self:
             message(text=f'identify Pfam for {proteome.name}')
             proteome.search_pfam_domain(treads=treads)
+        self.member = glob.glob(os.path.join(f, '*.faa'))
+        self.proteomes = []
+        self._load_proteomes()
+        self.domains = []
+        self._get_all_domains()
 
+    def _load_proteomes(self):  # 实例化为Proteome对象
+        for file in self.member:
+            aProteome = Proteome(file)
+            self.proteomes.append(aProteome)
+
+    def _get_all_domains(self):
+        for proteome in self.proteomes:
+            proteome.search_pfam_domain()
+
+        all_domains = []
+        for proteome in self.proteomes:
+            for protein in proteome:
+                all_domains.append(protein.domain)
+        self.domains = all_domains
+
+    def graph(self):
+        vs_es = get_edges(self.domains)
+        vs = vs_es[0]
+        es = vs_es[1]
+        g = build_graph(vs, es)
+        return g
     def _write_out_pfam(self, outdir):
         for proteome in self:
             with open(os.path.join(os.getcwd(), outdir, f'{proteome.name}.pfam'), 'w') as out:
