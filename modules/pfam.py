@@ -65,7 +65,11 @@ class Hits(list):
         """
         # 对列表按长度进行降序排列
         sorted_list = sorted(self, key=lambda x: x.hit_len, reverse=True)
-        cleaned_list = [sorted_list[0]]
+        try:
+            cleaned_list = [sorted_list[0]]
+        except IndexError:
+            # hmmscan 扫描结果为空
+            return None
         for i in range(1, len(sorted_list)):  # 从第二个开始比较
             current_pfam = sorted_list[i]
             independent = True

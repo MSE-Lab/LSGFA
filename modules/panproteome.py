@@ -25,7 +25,7 @@ class Protein:
         hits_clean = aHits.ana_relations()
         self.domain = hits_clean
 
-    def _hmm_scan(self, evalue):
+    def _hmm_scan(self, evalue='1e-5'):
         in_temp = make_temp_file(prefix='in_', close=False)
         in_temp.write(f'>{self.name}\n{self.sequence}')
         in_temp.close()
@@ -67,7 +67,7 @@ class Proteome(list):
         for seqid, seq in fasta_file.items():
             aProtein = Protein(name=seqid, sequence=seq)
             self.append(aProtein)
-        self.name = os.path.basename(fasta_name).split('/')[-1]
+        self.name = os.path.basename(fasta_name).replace('.faa', '')
         self.size = len(self)
 
     def search_pfam_domain(self, treads=60, evalue='1e-5'):
@@ -98,7 +98,28 @@ class Panproteome(list):
 
     def __init__(self, f):
         super().__init__()
-        self.member = glob.glob(os.path.join(f, '*.faa'))
+        for faa_file in glob.glob(os.path.join(f, '*.faa')):
+            aProteome = Proteome(fasta_name=faa_file)
+            self.append(aProteome)
 
-    def func(self):
-        pass
+    def _identify_pfam(self, treads):
+        proteome: Proteome
+        for proteome in self:
+            message(text=f'identify Pfam for {proteome.name}')
+            proteome.search_pfam_domain(treads=treads)
+
+    def _write_out_pfam(self, outdir):
+        for proteome in self:
+            with open(os.path.join(os.getcwd(), outdir, f'{proteome.name}.pfam'), 'w') as out:
+                for protein in proteome:
+                    try:
+                        domains = ";".join([d.name for d in protein.domain])
+                    except TypeError:
+                        domains = 'None'
+                    out.write(f'{protein.name}\t{domains}\n')
+
+    def make_pfam_graph(self, treads, outdir):
+        self._identify_pfam(treads=treads)
+        self._write_out_pfam(outdir=outdir)
+        # 构建基于pfam的网络
+        return
