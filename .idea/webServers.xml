@@ -3,7 +3,7 @@
   <component name="WebServers">
     <option name="servers">
       <webServer id="b635c01d-c048-4e53-a5a4-fd60b0f123ee" name="inspur">
-        <fileTransfer rootFolder="/home/zhixiaoyang/LSGFA" accessType="SFTP" host="10.50.0.198" port="22" sshConfigId="7eac60a9-a817-44f3-8f21-2bb2a1b5e979" sshConfig="zhixiaoyang@10.50.0.198:22 password">
+        <fileTransfer accessType="SFTP" host="10.50.0.198" port="22" sshConfigId="4e375810-b4f1-4651-812a-0114807a4be2" sshConfig="zhaoy@10.50.0.198:22 password">
           <advancedOptions>
             <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
           </advancedOptions>
