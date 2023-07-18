@@ -131,4 +131,5 @@ class Panproteome(list):
         es = vs_es[1]
 
         g = build_graph(vs, es)
-        return g
+        partitions = graph_split(g)
+        return partitions

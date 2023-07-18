@@ -1,8 +1,10 @@
 from itertools import combinations
 from igraph import Graph
+import leidenalg as la
 
 
 def get_edges(members):
+	# 用于获取点和边
 
 	pf_dic = {}
 	orf_list = []
@@ -35,12 +37,20 @@ def get_edges(members):
 
 
 def build_graph(orf_id, edges):
-	"""
-	建立网络
-	:return: g，网络文件
-	"""
+	# 用于建立网络
 	g = Graph()
 	g.add_vertices(orf_id)
 	g.add_edges(list(edges))
 	g.write_graphml('OGGraph.graphml')
 	return g
+
+
+def graph_split(self):
+	# 对网络进行社区发现
+
+	partitions = la.find_partition(self, la.ModularityVertexPartition)
+	partitions_names = []
+	for cs in partitions:
+		partitions_names.append([self.vs[i]['name'] for i in cs])
+	print(partitions_names)
+	return partitions_names
