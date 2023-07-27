@@ -114,16 +114,22 @@ class Panproteome(list):
             with open(os.path.join(os.getcwd(), outdir, f'{proteome.name}.pfam'), 'w') as out:
                 for protein in proteome:
                     try:
-                        domains = ";".join([d.name for d in protein.domain])
+                        domains = ";".join([d.id for d in protein.domain])
                     except TypeError:
                         domains = 'None'
                     out.write(f'{protein.name}\t{domains}\n')
 
     def make_pfam_graph(self, threads, outdir):
         # 并行的运行hmmscan为每个proteome.faa鉴定pfam
-        self._identify_pfam(threads=threads)
+        # self._identify_pfam(threads=threads)
         # 每一个proteome.faa的pfam鉴定结果都写在./testdata目录下了
-        self._write_out_pfam(outdir=outdir)
-        # 从这里开始写构建网络的代码 @Ling
-        # pfam的结果已经在testdata目录，可以通过从*.pfam读结果，然后建网络的功能
-        # 测试的时候把上面两句代码注释掉，跳过重新hmmscan的步骤
+        # self._write_out_pfam(outdir=outdir)
+
+        members = glob.glob(os.path.join(os.getcwd(), outdir, '*.pfam'))
+        vs_es = get_edges(members)
+        vs = vs_es[0]
+        es = vs_es[1]
+
+        g = build_graph(vs, es)
+        partitions = graph_split(g)
+        return partitions
