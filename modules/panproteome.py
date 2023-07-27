@@ -1,5 +1,6 @@
 import os
 import glob
+import shutil
 from multiprocessing import Pool, Manager
 
 from pyfasta import Fasta
@@ -97,6 +98,8 @@ class Proteome(list):
 
 class Panproteome(list):
 
+    completed_file = "completed_proteomes.txt"
+
     def __init__(self, f):
         super().__init__()
         for faa_file in glob.glob(os.path.join(f, '*.faa')):
@@ -105,9 +108,23 @@ class Panproteome(list):
 
     def _identify_pfam(self, threads):
         proteome: Proteome
+        with open(self.completed_file, "r") as file:
+            completed_proteomes = file.read().splitlines()
         for proteome in self:
-            message(text=f'identify Pfam for {proteome.name}')
-            proteome.search_pfam_domain(threads=threads)
+            if proteome.name in completed_proteomes:
+                print(f"Proteome {proteome.name} already processed. Skipping...")
+            else:
+                message(text=f'identify Pfam for {proteome.name}')
+                proteome.search_pfam_domain(threads=threads)
+
+                # 将已完成的proteome_id记录到文件中
+                with open(self.completed_file, "a") as file:
+                    file.write(f"{proteome.name}\n")
+    @staticmethod
+    def backup_completed_file():
+        if os.path.exists(Panproteome.completed_file):
+            shutil.copy(Panproteome.completed_file, "completed_backup.txt")
+            os.remove(Panproteome.completed_file)
 
     def _write_out_pfam(self, outdir):
         for proteome in self:
@@ -132,4 +149,5 @@ class Panproteome(list):
 
         g = build_graph(vs, es)
         partitions = graph_split(g)
+        # 得到的partitions是一个嵌套列表，其中每个列表表示一个clade，每个clade里包含基因的编号
         return partitions
