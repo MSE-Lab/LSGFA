@@ -10,7 +10,7 @@ from modules.utils import *
 from modules.build_graph import *
 
 pfamDB = os.path.join(os.getcwd(), 'modules', 'Pfam-A.hmm')
-
+# pfamDB = '/media/disk2/biodatabases/Pfam/Pfam-A.hmm'
 
 class Protein:
 
@@ -108,8 +108,11 @@ class Panproteome(list):
 
     def _identify_pfam(self, threads):
         proteome: Proteome
-        with open(self.completed_file, "r") as file:
-            completed_proteomes = file.read().splitlines()
+        try :
+            with open(self.completed_file, "r") as file:
+                completed_proteomes = file.read().splitlines()
+        except FileNotFoundError:
+            completed_proteomes = []
         for proteome in self:
             if proteome.name in completed_proteomes:
                 print(f"Proteome {proteome.name} already processed. Skipping...")
