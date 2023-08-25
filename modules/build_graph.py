@@ -1,4 +1,5 @@
-from itertools import combinations
+from collections import defaultdict, deque
+from itertools import combinations, product
 from igraph import Graph
 import leidenalg as la
 
@@ -17,32 +18,35 @@ def get_edges(members):
 	# 用于获取点和边
 	# members是.Pfam的文件
 
-	orf_pfam_dic = {}
 	orf_list = []
+	pf_dic = defaultdict(list)
 	edges_list = []
 
 	for member in members:
 		with open(member) as f:
-			contents = f.readlines()
-		content_list = [content.split('\t') for content in contents]
-
-		# 建立orf对应的pfam的字典
-		for i in range(len(content_list)):
-			orf = content_list[i][0]
-			orf_list.append(orf)
-			pf = list(set(content_list[i][1].rstrip().split(';')))
-			if pf != ['None']:
-				orf_pfam_dic[orf] = pf
+			for line in f:
+				orf, pfs = line.rstrip().split('\t')
+				orf_list.append(orf)
+				pfs = tuple(set(pfs.split(';')))
+				if pfs != ('None',):
+					pf_dic[pfs].append(orf)
 
 	# 判断两个orf之间是否可以连线
-	key_list = sorted(list(orf_pfam_dic.keys()))
-	n = len(key_list)
-	for i in range(n):
-		lista = orf_pfam_dic[key_list[i]]
-		for j in range(i+1, n):
-			listb = orf_pfam_dic[key_list[j]]
-			if co_index(lista, listb) >= 0.6:
-				edges_list.append((key_list[i], key_list[j]))
+	pf_list = deque(sorted(pf_dic.keys()))
+
+	while pf_list:
+		# 相同pfam的彼此相连
+		pf_i = pf_list.popleft()
+		orf_i = pf_dic[pf_i]
+		if len(orf_i) > 1:
+			combination = list(combinations(sorted(orf_i), 2))
+			edges_list.extend(combination)
+		# 不同pfam的考虑阈值
+		for pf_j in pf_list:
+			orf_j = pf_dic[pf_j]
+			if co_index(pf_i, pf_j) >= 0.6:
+				combination = list(product(orf_i, orf_j))
+				edges_list.extend(combination)
 
 	# 边为：edges_list
 	vertices = list(set(orf_list))  # 点
