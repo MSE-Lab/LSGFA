@@ -2,7 +2,6 @@ import os
 import glob
 import shutil
 from multiprocessing import Pool, Manager
-# import pandas as pd
 
 from pyfasta import Fasta
 
@@ -10,8 +9,8 @@ from modules.pfam import *
 from modules.utils import *
 from modules.build_graph import *
 
-# pfamDB = os.path.join(os.getcwd(), 'modules', 'Pfam-A.hmm')
-pfamDB = '/media/disk2/biodatabases/Pfam/Pfam-A.hmm'
+pfamDB = os.path.join(os.getcwd(), 'modules', 'Pfam-A.hmm')
+# pfamDB = '/media/disk2/biodatabases/Pfam/Pfam-A.hmm'
 
 class Protein:
 
@@ -36,7 +35,7 @@ class Protein:
         cmd = ["hmmscan", "-E", evalue, "--domE", evalue, "--domtblout", out_temp.name, pfamDB, in_temp.name]
         # cmd2 = ['hmmscan', '--cut_ga', '--domtblout', out_temp.name, pfamDB, in_temp.name]
         cap = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        cap.communicate()
+        cap.wait()
         if cap.returncode != 0:
             # some errors happened
             for e in cap.stderr:
@@ -136,19 +135,18 @@ class Panproteome(list):
                 for protein in proteome:
                     try:
                         domains = ";".join([d.id for d in protein.domain])
-                        #hit_len = ";".join([d.id for d in protein.domain])
                     except TypeError:
                         domains = 'None'
                     out.write(f'{protein.name}\t{domains}\n')
 
-    def make_pfam_graph(self, threads, outdir, intersect_t):
+    def make_pfam_graph(self, threads, outdir):
         # 并行的运行hmmscan为每个proteome.faa鉴定pfam
         # self._identify_pfam(threads=threads)
         # 每一个proteome.faa的pfam鉴定结果都写在./testdata目录下了
         # self._write_out_pfam(outdir=outdir)
 
         members = glob.glob(os.path.join(os.getcwd(), outdir, '*.pfam'))
-        vs_es = get_edges(members, intersect_t)
+        vs_es = get_edges(members)
         vs = vs_es[0]
         es = vs_es[1]
 
