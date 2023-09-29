@@ -10,11 +10,10 @@ def co_index(lista, listb):
 	if set_len == 0:
 		co_number = 0
 	else:
-		co_number = (set_len/len(lista) + set_len/len(listb))*0.5
+		co_number = min(set_len/len(lista), set_len/len(listb))
 	return co_number
 
-
-def get_edges(members):
+def get_edges(members, intersect_t):
 	# 用于获取点和边
 	# members是.Pfam的文件
 
@@ -27,7 +26,7 @@ def get_edges(members):
 			for line in f:
 				orf, pfs = line.rstrip().split('\t')
 				orf_list.append(orf)
-				pfs = tuple(set(pfs.split(';')))
+				pfs = tuple(sorted(set(pfs.split(';'))))
 				if pfs != ('None',):
 					pf_dic[pfs].append(orf)
 
@@ -44,7 +43,7 @@ def get_edges(members):
 		# 不同pfam的考虑阈值
 		for pf_j in pf_list:
 			orf_j = pf_dic[pf_j]
-			if co_index(pf_i, pf_j) >= 0.6:
+			if co_index(pf_i, pf_j) > intersect_t:
 				combination = list(product(orf_i, orf_j))
 				edges_list.extend(combination)
 
