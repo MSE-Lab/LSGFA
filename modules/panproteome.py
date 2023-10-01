@@ -1,6 +1,7 @@
 import os
 import glob
 import shutil
+import json
 from multiprocessing import Pool, Manager
 # import pandas as pd
 
@@ -12,6 +13,7 @@ from modules.build_graph import *
 
 # pfamDB = os.path.join(os.getcwd(), 'modules', 'Pfam-A.hmm')
 pfamDB = '/media/disk2/biodatabases/Pfam/Pfam-A.hmm'
+
 
 class Protein:
 
@@ -96,6 +98,19 @@ class Proteome(list):
             protein.domain = identified_pfams[protein.name]
         return
 
+    def _write_out_pfam(self, outdir):  # self是一个faa文件
+        with open(os.path.join(os.getcwd(), outdir, f'{self.name}.pfam'), 'w') as out:
+            proteome_list = []
+            for protein in self:  # 每个orf
+                try:
+                    domains = [{d.id: d.percent} for d in protein.domain]
+                except TypeError:
+                    domains = ['None']
+                protein_dict = {protein.name: domains}  # {'orf1': [{'pf1': 0.5}, {'pf2': 0.3}]}
+                proteome_list.append(protein_dict)
+            proteome_json = json.dumps(proteome_list, sort_keys=True, indent=4, separators=(',', ': '))
+            out.write(proteome_json)
+
 
 class Panproteome(list):
 
@@ -107,45 +122,38 @@ class Panproteome(list):
             aProteome = Proteome(fasta_name=faa_file)
             self.append(aProteome)
 
-    def _identify_pfam(self, threads):
+    def _identify_pfam(self, threads, outdir):
+
         proteome: Proteome
-        try :
+        try:
             with open(self.completed_file, "r") as file:
                 completed_proteomes = file.read().splitlines()
         except FileNotFoundError:
             completed_proteomes = []
+
         for proteome in self:
             if proteome.name in completed_proteomes:
                 print(f"Proteome {proteome.name} already processed. Skipping...")
             else:
                 message(text=f'identify Pfam for {proteome.name}')
                 proteome.search_pfam_domain(threads=threads)
+                proteome._write_out_pfam(outdir=outdir)
 
                 # 将已完成的proteome_id记录到文件中
                 with open(self.completed_file, "a") as file:
                     file.write(f"{proteome.name}\n")
+
     @staticmethod
     def backup_completed_file():
         if os.path.exists(Panproteome.completed_file):
             shutil.copy(Panproteome.completed_file, "completed_backup.txt")
             os.remove(Panproteome.completed_file)
 
-    def _write_out_pfam(self, outdir):
-        for proteome in self:
-            with open(os.path.join(os.getcwd(), outdir, f'{proteome.name}.pfam'), 'w') as out:
-                for protein in proteome:
-                    try:
-                        domains = ";".join([d.id for d in protein.domain])
-                        #hit_len = ";".join([d.id for d in protein.domain])
-                    except TypeError:
-                        domains = 'None'
-                    out.write(f'{protein.name}\t{domains}\n')
-
-    def make_pfam_graph(self, threads, outdir, intersect_t):
+    def put_pfam_file(self, threads, outdir):
         # 并行的运行hmmscan为每个proteome.faa鉴定pfam
-        # self._identify_pfam(threads=threads)
-        # 每一个proteome.faa的pfam鉴定结果都写在./testdata目录下了
-        # self._write_out_pfam(outdir=outdir)
+        self._identify_pfam(threads=threads, outdir=outdir)
+
+    def make_pfam_graph(self, outdir, intersect_t):
 
         members = glob.glob(os.path.join(os.getcwd(), outdir, '*.pfam'))
         vs_es = get_edges(members, intersect_t)

@@ -1,6 +1,6 @@
 class Pfam:
 
-    def __init__(self, pfam_name, pfam_id, length, orf, start, end, hit_len):
+    def __init__(self, pfam_name, pfam_id, length, orf, start, end, hit_len, percent):
         self.name = pfam_name
         self.id = pfam_id
         self.length = length
@@ -8,6 +8,7 @@ class Pfam:
         self.start = start
         self.end = end
         self.hit_len = hit_len
+        self.percent = percent
 
     def __str__(self):
         return self.name
@@ -49,13 +50,16 @@ class Hits(list):
             pfam_start = int(split_line[17])
             pfam_end = int(split_line[18])
             pfam_hit_length = pfam_end - pfam_start
+            seq_len = int(split_line[5])
+            pfam_percent = pfam_hit_length/seq_len
             aPfam = Pfam(pfam_name=pfam_name,
                          pfam_id=pfam_id,
                          length=pfam_length,
                          orf=pfam_orf,
                          start=pfam_start,
                          end=pfam_end,
-                         hit_len=pfam_hit_length)
+                         hit_len=pfam_hit_length,
+                         percent=pfam_percent)
             self.append(aPfam)
 
     def ana_relations(self):
