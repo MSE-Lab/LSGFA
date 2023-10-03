@@ -100,15 +100,21 @@ class Proteome(list):
 
     def _write_out_pfam(self, outdir):  # self是一个faa文件
         with open(os.path.join(os.getcwd(), outdir, f'{self.name}.pfam'), 'w') as out:
-            proteome_list = []
+            proteome_dic = {}
             for protein in self:  # 每个orf
                 try:
-                    domains = [{d.id: d.percent} for d in protein.domain]
+                    domains = {}
+                    for d in protein.domain:
+                        if d.id in domains:
+                            p_ = domains[d.id]
+                            domains[d.id] = p_ + d.percent
+                        else:
+                            domains[d.id] = d.percent
                 except TypeError:
-                    domains = ['None']
-                protein_dict = {protein.name: domains}  # {'orf1': [{'pf1': 0.5}, {'pf2': 0.3}]}
-                proteome_list.append(protein_dict)
-            proteome_json = json.dumps(proteome_list, sort_keys=True, indent=4, separators=(',', ': '))
+                    domains = 'None'
+                protein_dict = {protein.name: domains}  # {'orf1': {'pf1': 0.5, 'pf2': 0.3}}
+                proteome_dic.update(protein_dict)
+            proteome_json = json.dumps(proteome_dic, sort_keys=True, indent=4, separators=(',', ': '))
             out.write(proteome_json)
 
 

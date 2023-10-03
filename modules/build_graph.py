@@ -2,6 +2,7 @@ from collections import defaultdict, deque
 from itertools import combinations, product
 from igraph import Graph
 import leidenalg as la
+import json
 
 
 def co_index(lista, listb):
@@ -13,43 +14,82 @@ def co_index(lista, listb):
 		co_number = min(set_len/len(lista), set_len/len(listb))
 	return co_number
 
-def get_edges(members, intersect_t):
-	# 用于获取点和边
+
+def co_len(orf_a, orf_b):
+	# 用于判断两个ORF之间共享的pfam之间hit到的最短长度
+	len_a = 0
+	len_b = 0
+	co_pfam_list = list(set(orf_a.keys() & orf_b.keys()))
+	for pf in co_pfam_list:
+		len_a = len_a + orf_a[pf]
+		len_b = len_b + orf_b[pf]
+	min_len = min(len_a, len_b)
+	return min_len
+
+
+def get_orf_dic(members):
+	# 从.pfam文件中获取内容，处理为字典
 	# members是.Pfam的文件
 
-	orf_list = []
-	pf_dic = defaultdict(list)
-	edges_list = []
-
+	orf_dic = {}
 	for member in members:
-		with open(member) as f:
-			for line in f:
-				orf, pfs = line.rstrip().split('\t')
-				orf_list.append(orf)
-				pfs = tuple(sorted(set(pfs.split(';'))))
-				if pfs != ('None',):
-					pf_dic[pfs].append(orf)
+		with open(member, 'r') as f:
+			data = json.load(f)
+			orf_dic.update(data)
+	return orf_dic
 
-	# 判断两个orf之间是否可以连线
-	pf_list = deque(sorted(pf_dic.keys()))
 
-	while pf_list:
-		# 相同pfam的彼此相连
-		pf_i = pf_list.popleft()
-		orf_i = pf_dic[pf_i]
-		if len(orf_i) > 1:
-			combination = list(combinations(sorted(orf_i), 2))
-			edges_list.extend(combination)
-		# 不同pfam的考虑阈值
-		for pf_j in pf_list:
-			orf_j = pf_dic[pf_j]
-			if co_index(pf_i, pf_j) > intersect_t:
-				combination = list(product(orf_i, orf_j))
-				edges_list.extend(combination)
+def get_vertices(orf_dic):
+	# 用于获取点，即orf的名字
+	vertices = list(key for key in orf_dic.keys())
+	return vertices
 
-	# 边为：edges_list
-	vertices = list(set(orf_list))  # 点
-	return vertices, edges_list
+
+def get_edges(orf_dic, d_co_index = 0.5, d_co_len = 0.5):
+	# 用于获取边
+	edges_list = set()
+
+	# 获取不同类型的pfam对应的orf
+	pf_dic = {}
+	for orf,p in orf_dic.items():
+		# o为  'orf1'
+		# p为  {'PF1': 0.1, 'PF2': 0.18, 'PF3': 0.5}}
+		try:
+			pf_type = tuple(sorted(list(p.keys())))
+			pf_dic.setdefault(pf_type, []).append(orf)
+		except AttributeError:  # 当注释结果为None时
+			pass
+
+	# 对不同类型的pfam组合的处理
+	pf_list = list(sorted(pf_dic.keys()))
+
+	# 先处理pfam相同的类
+	for p_t in pf_list:  # p_t是pfam组合的元组
+		orf_list = pf_dic[p_t]  # ['orf1', 'orf2']
+		orf_len = len(orf_list)
+		if orf_len >1:  # 该类只有一个orf则不予考虑
+			for i in range(orf_len):
+				orf_i = orf_dic[orf_list[i]]  # orf_i的结构为{'pf1':0.1,'pf2':0.2}
+				for j in range(i+1, orf_len):
+					orf_j = orf_dic[orf_list[j]]
+					if co_len(orf_i, orf_j) > d_co_len:  # 如果长度满足设定值，则添加边
+						edges_list.add(tuple(sorted([orf_list[i], orf_list[j]])))
+	# 然后对不同pfam类型间的orf进行处理
+	for i in range(len(pf_list)):
+		pf_i = pf_list[i]
+		for j in range(i+1, len(pf_list)):
+			pf_j = pf_list[j]
+
+			if co_index(pf_i, pf_j) >= d_co_index:  # 当co_index不满足设定值时，就不予考虑
+				orf_list_i = pf_dic[pf_i]  # ['orf1', 'orf2']
+				orf_list_j = pf_dic[pf_j]
+				for n in range(len(orf_list_i)):
+					orf_i = orf_dic[orf_list_i[n]]  # orf_i的结构为{'pf1':0.1,'pf2':0.2}
+					for m in range(len(orf_list_j)):
+						orf_j = orf_dic[orf_list_j[m]]
+						if co_len(orf_i, orf_j) > d_co_len:  # 如果长度满足设定值，则添加边
+							edges_list.add(tuple(sorted([orf_list_i[n], orf_list_j[m]])))
+	return edges_list
 
 
 def build_graph(orf_id, edges):
