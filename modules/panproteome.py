@@ -1,14 +1,15 @@
-import os
 import glob
+import os.path
 import shutil
-import json
+import subprocess
 from multiprocessing import Pool, Manager
-# import pandas as pd
+from collections import defaultdict
+
+import igraph
 
 from pyfasta import Fasta
 
 from modules.pfam import *
-from modules.utils import *
 from modules.build_graph import *
 
 # pfamDB = os.path.join(os.getcwd(), 'modules', 'Pfam-A.hmm')
@@ -28,6 +29,7 @@ class Protein:
     def _hmm_profile(self, scan_out):
         aHits = Hits(scan_out)
         hits_clean = aHits.ana_relations()
+
         self.domain = hits_clean
 
     def _hmm_scan(self, evalue='1e-5'):
@@ -74,6 +76,8 @@ class Proteome(list):
             self.append(aProtein)
         self.name = os.path.basename(fasta_name).replace('.faa', '')
         self.size = len(self)
+        # os.remove(f"{fasta_name}.flat")
+        # os.remove(f"{fasta_name}.gdx")
 
     def search_pfam_domain(self, threads=60, evalue='1e-5'):
         """
@@ -98,28 +102,23 @@ class Proteome(list):
             protein.domain = identified_pfams[protein.name]
         return
 
-    def _write_out_pfam(self, outdir):  # self是一个faa文件
-        with open(os.path.join(os.getcwd(), outdir, f'{self.name}.pfam'), 'w') as out:
-            proteome_dic = {}
-            for protein in self:  # 每个orf
-                try:
-                    domains = {}
-                    for d in protein.domain:
-                        if d.id in domains:
-                            p_ = domains[d.id]
-                            domains[d.id] = p_ + d.percent
-                        else:
-                            domains[d.id] = d.percent
-                except TypeError:
-                    domains = 'None'
-                protein_dict = {protein.name: domains}  # {'orf1': {'pf1': 0.5, 'pf2': 0.3}}
-                proteome_dic.update(protein_dict)
-            proteome_json = json.dumps(proteome_dic, sort_keys=True, indent=4, separators=(',', ': '))
-            out.write(proteome_json)
+    def _write_out_pfam(self, out_dir):  # self是一个faa文件
+        # 用于输出pfam的文件
+        proteome_domain = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+        for protein in self:  # 每个orf
+            domain_list = protein.domain  # 提取蛋白的domain
+            if domain_list is not None:
+                combined = ";".join(sorted([d.id for d in domain_list]))  # 组合
+                for domain_o in domain_list:
+                    proteome_domain[combined][protein.name]["Domain"].append(domain_o.id)
+                    proteome_domain[combined][protein.name]["LenCov"].append(domain_o.percent)
+            else:  # 注释不到pfam时就返回空列表
+                proteome_domain["None"][protein.name]["Domain"] = list()
+                proteome_domain["None"][protein.name]["LenCov"] = list()
+        FileOperator(f'{self.name}.pfam', out_dir, "json", proteome_domain).write()
 
 
 class Panproteome(list):
-
     completed_file = "completed_proteomes.txt"
 
     def __init__(self, f):
@@ -143,8 +142,7 @@ class Panproteome(list):
             else:
                 message(text=f'identify Pfam for {proteome.name}')
                 proteome.search_pfam_domain(threads=threads)
-                proteome._write_out_pfam(outdir=outdir)
-
+                proteome._write_out_pfam(out_dir=outdir)
                 # 将已完成的proteome_id记录到文件中
                 with open(self.completed_file, "a") as file:
                     file.write(f"{proteome.name}\n")
@@ -159,14 +157,18 @@ class Panproteome(list):
         # 并行的运行hmmscan为每个proteome.faa鉴定pfam
         self._identify_pfam(threads=threads, outdir=outdir)
 
-    def make_pfam_graph(self, outdir, intersect_t):
+    @staticmethod
+    def make_pfam_graph(outdir, d_co_index=0.5, d_co_len=0.8):
+        # 作图
+        pfam = PGraph(outdir)
+        pfam.get_full_connected_edges()
+        pfam.get_append_edges(d_co_index, d_co_len)
+        vs = pfam.genes
+        es = pfam.related_edges
 
-        members = glob.glob(os.path.join(os.getcwd(), outdir, '*.pfam'))
-        vs_es = get_edges(members, intersect_t)
-        vs = vs_es[0]
-        es = vs_es[1]
-
-        g = build_graph(vs, es)
-        partitions = graph_split(g)
-        # 得到的partitions是一个嵌套列表，其中每个列表表示一个clade，每个clade里包含基因的编号
-        return partitions
+        g = igraph.Graph()
+        g.add_vertices(vs)
+        g.add_edges(es)
+        print(g.ecount())
+        g.write_gml(os.path.join(outdir,'pfam_graph.gml'))
+        return g
