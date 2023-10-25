@@ -1,7 +1,13 @@
-import os
 import glob
+import os
+import time
+from collections import defaultdict, deque
 from itertools import combinations, product
+import igraph
 import numpy as np
+import pandas
+import pandas as pd
+import json
 import warnings
 from modules.utils import *
 
@@ -22,28 +28,20 @@ class DomainType:
         print(self.domain)
 
     def __len__(self):
-        return len(self.domain)
+        return len(self.get_sequences_ids())
 
     def _get_domains(self):
         return set(self.name.split(";"))
 
-    def _get_sequences_ids(self):
+    def get_sequences_ids(self):
         return list(self.domain_data.keys())
 
     def sharing_domain_loci(self, sharing_domain, domain_length_cov):
-        # 两个orf间重叠的pfam
         for loci, domain_cov_info in self.domain_data.items():
-            # 用于判断用于计算重叠的pfam的长度之和
             domain_cov_sum = np.sum(
-                np.array(domain_cov_info['LenCov'])[np.isin(np.array(domain_cov_info['Domain']),
-                                                            sharing_domain)])
+                np.array(domain_cov_info['LenCov'])[np.isin(np.array(domain_cov_info['Domain']), sharing_domain)])
             if domain_cov_sum >= domain_length_cov:
-                # ？？？？？
                 self.add_loci.append(loci)
-
-    def generate_full_graph(self):
-        # domain相同的序列，内部自己形成全连通的图
-        return list(combinations(self._get_sequences_ids(), 2))
 
 
 class PGraph(dict):
@@ -51,23 +49,21 @@ class PGraph(dict):
         super(PGraph, self).__init__()
         members = glob.glob(os.path.join(pfam_res_dir, '*.pfam'))
         self.genes = []
+        self.node_attribute = []
         self.related_edges = []
         self.domains = domains
-        for m in members:  # m表示一个注释pfam的文件
+        for m in members:
             json_data = FileOperator(os.path.basename(m), pfam_res_dir, "json")
             json_data.read()
             for pfam_component, seq_info in json_data.data.items():
                 self.setdefault(pfam_component, dict()).update(seq_info)
-                self.genes.extend(seq_info.keys())
         self._generate_domain_info()
 
     def _compared_domain_component_pairwise(self):
         domain_components = [k for k in self.keys() if len(k.split(";")) > 1]
-        # ？？？？
         return list(combinations(domain_components, 2))
 
     def _generate_domain_info(self):
-        # 获取domain的信息
         domain_component = {}
         for pfam_component, seq_info in self.items():
             pfam_ = DomainType(name=pfam_component, domain_data=seq_info)
@@ -76,8 +72,8 @@ class PGraph(dict):
 
     def get_full_connected_edges(self):
         for pfam_, pfam_info in self.domains.items():
-            if pfam_ != 'None':
-                self.related_edges.extend(pfam_info.generate_full_graph())
+            self.genes.extend(pfam_info.get_sequences_ids())
+            self.node_attribute.append([pfam_] * len(pfam_info))
 
     def get_append_edges(self, sharing_cov, len_cov):
         for pf_1, pf_2 in self._compared_domain_component_pairwise():
@@ -91,9 +87,62 @@ class PGraph(dict):
 
     @staticmethod
     def sharing_domain(pf_type1, pf_type2, domain_sharing_cov):
-        # 比较两个domain间共享pfam的长度
         domain_1 = pf_type1.split(';')
         domain_2 = pf_type2.split(';')
         sharing_domain = list(set(domain_1) & set(domain_2))
         sharing_cov = min([len(sharing_domain) / len(domain_1), len(sharing_domain) / len(domain_2)])
         return sharing_domain if sharing_cov >= domain_sharing_cov else None
+
+
+class DomainGraph:
+    @staticmethod
+    def read_pfam_data(pfam_res_dir):
+        members = glob.glob(os.path.join(pfam_res_dir, '*.pfam'))
+        proteome_pfam = pd.concat([pd.read_csv(m, sep='\t', dtype={'LenCov': np.float64}) for m in members])
+        return proteome_pfam
+
+    @staticmethod
+    def generate_full_graph(group_df):
+        s = time.time()
+        es = []
+        filter_p = []
+        for name, group in group_df:
+            if name != '*':
+                es.extend(list(combinations(group['SeqIDs'].to_list(), 2)))
+                if len(name.split(';')) > 1:
+                    filter_p.append(name)
+        e = time.time()
+        print(f'full graph: {e - s}')
+        return filter_p, es
+
+    @staticmethod
+    def sharing_domain(pf_type1, pf_type2, domain_sharing_cov):
+        domain_1 = pf_type1.split(';')
+        domain_2 = pf_type2.split(';')
+        sharing_domain = list(set(domain_1) & set(domain_2))
+        sharing_cov = min([len(sharing_domain) / len(domain_1), len(sharing_domain) / len(domain_2)])
+        return sharing_domain if sharing_cov >= domain_sharing_cov else None
+
+    @staticmethod
+    def append_edges(pf_type1, pf_type2, pfams_group, sharing_domains, domain_length_cov):
+        # 过滤掉不共享的结构域的行
+        # 将结构域长度转化为数值
+        pf_df1 = pfams_group.get_group(pf_type1)
+        pf_df2 = pfams_group.get_group(pf_type2)
+        pf_df1 = pf_df1[pf_df1['Domain'].isin(sharing_domains)]
+        pf_df2 = pf_df2[pf_df2['Domain'].isin(sharing_domains)]
+        # group_df1, group_df2 = DomainGraph.split_cols(pf_df1, pf_df2, sharing_domains)
+        # 判断共有的结构域
+        seqs_cov1 = pf_df1.groupby('SeqIDs')['LenCov'].agg(lambda x: x.sum() >= domain_length_cov)
+        seqs_cov2 = pf_df2.groupby('SeqIDs')['LenCov'].agg(lambda x: x.sum() >= domain_length_cov)
+        seqs_meet = seqs_cov1[seqs_cov1].index.to_list()
+        seqs_meet2 = seqs_cov2[seqs_cov2].index.to_list()
+        edges = list(product(seqs_meet, seqs_meet2))
+        return edges
+
+    @staticmethod
+    def generate_final_graph(vs, es):
+        g = igraph.Graph()
+        g.add_vertices(vs)
+        g.add_edges(es)
+        return g

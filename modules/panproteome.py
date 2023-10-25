@@ -28,9 +28,7 @@ class Protein:
 
     def _hmm_profile(self, scan_out):
         aHits = Hits(scan_out)
-        hits_clean = aHits.ana_relations()
-
-        self.domain = hits_clean
+        self.domain = aHits
 
     def _hmm_scan(self, evalue='1e-5'):
         in_temp = make_temp_file(prefix='in_', close=False)
@@ -76,8 +74,8 @@ class Proteome(list):
             self.append(aProtein)
         self.name = os.path.basename(fasta_name).replace('.faa', '')
         self.size = len(self)
-        # os.remove(f"{fasta_name}.flat")
-        # os.remove(f"{fasta_name}.gdx")
+        os.remove(f"{fasta_name}.flat")
+        os.remove(f"{fasta_name}.gdx")
 
     def search_pfam_domain(self, threads=60, evalue='1e-5'):
         """
@@ -107,14 +105,15 @@ class Proteome(list):
         proteome_domain = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
         for protein in self:  # 每个orf
             domain_list = protein.domain  # 提取蛋白的domain
-            if domain_list is not None:
+            if domain_list == []:  # 注释不到pfam时就返回空列表
+                proteome_domain["None"][protein.name]["Domain"] = list()
+                proteome_domain["None"][protein.name]["LenCov"] = list()
+            # if domain_list is not None:
+            else:
                 combined = ";".join(sorted([d.id for d in domain_list]))  # 组合
                 for domain_o in domain_list:
                     proteome_domain[combined][protein.name]["Domain"].append(domain_o.id)
                     proteome_domain[combined][protein.name]["LenCov"].append(domain_o.percent)
-            else:  # 注释不到pfam时就返回空列表
-                proteome_domain["None"][protein.name]["Domain"] = list()
-                proteome_domain["None"][protein.name]["LenCov"] = list()
         FileOperator(f'{self.name}.pfam', out_dir, "json", proteome_domain).write()
 
 
