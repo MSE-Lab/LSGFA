@@ -1,16 +1,10 @@
-import glob
-import os.path
 import shutil
 import subprocess
-from multiprocessing import Pool, Manager
 from collections import defaultdict
-
-import igraph
-
+from multiprocessing import Pool, Manager
 from pyfasta import Fasta
-
-from modules.pfam import *
 from modules.build_graph import *
+from modules.pfam import *
 
 # pfamDB = os.path.join(os.getcwd(), 'modules', 'Pfam-A.hmm')
 pfamDB = '/media/disk2/biodatabases/Pfam/Pfam-A.hmm'
@@ -28,7 +22,8 @@ class Protein:
 
     def _hmm_profile(self, scan_out):
         aHits = Hits(scan_out)
-        self.domain = aHits
+        hits_clean = aHits.ana_relations()
+        self.domain = hits_clean
 
     def _hmm_scan(self, evalue='1e-5'):
         in_temp = make_temp_file(prefix='in_', close=False)
@@ -70,6 +65,7 @@ class Proteome(list):
     def _read_fasta(self, fasta_name):
         fasta_file = Fasta(fasta_name)
         for seqid, seq in fasta_file.items():
+            seqid = seqid.split(" ")[0]
             aProtein = Protein(name=seqid, sequence=seq)
             self.append(aProtein)
         self.name = os.path.basename(fasta_name).replace('.faa', '')
@@ -100,20 +96,18 @@ class Proteome(list):
             protein.domain = identified_pfams[protein.name]
         return
 
-    def _write_out_pfam(self, out_dir):  # self是一个faa文件
-        # 用于输出pfam的文件
+    def write_out_pfam(self, out_dir):  # self是一个faa文件
         proteome_domain = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
         for protein in self:  # 每个orf
-            domain_list = protein.domain  # 提取蛋白的domain
-            if domain_list == []:  # 注释不到pfam时就返回空列表
-                proteome_domain["None"][protein.name]["Domain"] = list()
-                proteome_domain["None"][protein.name]["LenCov"] = list()
-            # if domain_list is not None:
-            else:
-                combined = ";".join(sorted([d.id for d in domain_list]))  # 组合
+            domain_list = protein.domain
+            if domain_list:
+                combined = ";".join(sorted([d.id for d in domain_list]))
                 for domain_o in domain_list:
                     proteome_domain[combined][protein.name]["Domain"].append(domain_o.id)
                     proteome_domain[combined][protein.name]["LenCov"].append(domain_o.percent)
+            else:
+                proteome_domain["None"][protein.name]["Domain"] = list()
+                proteome_domain["None"][protein.name]["LenCov"] = list()
         FileOperator(f'{self.name}.pfam', out_dir, "json", proteome_domain).write()
 
 
@@ -141,10 +135,19 @@ class Panproteome(list):
             else:
                 message(text=f'identify Pfam for {proteome.name}')
                 proteome.search_pfam_domain(threads=threads)
-                proteome._write_out_pfam(out_dir=outdir)
+                proteome.write_out_pfam(out_dir=outdir)
                 # 将已完成的proteome_id记录到文件中
                 with open(self.completed_file, "a") as file:
                     file.write(f"{proteome.name}\n")
+
+    def make_sequences_info(self):
+        SeqInfo = dict()
+        genome: Proteome
+        protein: Protein
+        for genome in self:
+            for protein in genome:
+                SeqInfo[protein.name] = protein.sequence
+        return SeqInfo
 
     @staticmethod
     def backup_completed_file():
@@ -157,17 +160,13 @@ class Panproteome(list):
         self._identify_pfam(threads=threads, outdir=outdir)
 
     @staticmethod
-    def make_pfam_graph(outdir, d_co_index=0.5, d_co_len=0.8):
-        # 作图
-        pfam = PGraph(outdir)
+    def make_pfam_graph(ou_dir):
+        pfam = PGraph(ou_dir)
         pfam.get_full_connected_edges()
-        pfam.get_append_edges(d_co_index, d_co_len)
+        pfam.get_append_edges()
         vs = pfam.genes
         es = pfam.related_edges
-
-        g = igraph.Graph()
-        g.add_vertices(vs)
-        g.add_edges(es)
-        print(g.ecount())
-        g.write_gml(os.path.join(outdir,'pfam_graph.gml'))
-        return g
+        pfams = pfam.node_attribute
+        basic_graph = PGraph.generate_final_graph(vs, es, pfam=pfams)
+        basic_graph.write_gml(os.path.join(ou_dir, 'pfam_graph.gml'))
+        return basic_graph

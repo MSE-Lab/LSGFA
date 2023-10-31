@@ -1,14 +1,9 @@
 import glob
 import os
-import time
-from collections import defaultdict, deque
+import warnings
 from itertools import combinations, product
 import igraph
 import numpy as np
-import pandas
-import pandas as pd
-import json
-import warnings
 from modules.utils import *
 
 warnings.filterwarnings("ignore")
@@ -73,9 +68,9 @@ class PGraph(dict):
     def get_full_connected_edges(self):
         for pfam_, pfam_info in self.domains.items():
             self.genes.extend(pfam_info.get_sequences_ids())
-            self.node_attribute.append([pfam_] * len(pfam_info))
+            self.node_attribute.extend([pfam_] * len(pfam_info))
 
-    def get_append_edges(self, sharing_cov, len_cov):
+    def get_append_edges(self, sharing_cov=0.5, len_cov=0.8):
         for pf_1, pf_2 in self._compared_domain_component_pairwise():
             sharing_domains = self.sharing_domain(pf_1, pf_2, sharing_cov)
             if sharing_domains is not None:
@@ -93,56 +88,10 @@ class PGraph(dict):
         sharing_cov = min([len(sharing_domain) / len(domain_1), len(sharing_domain) / len(domain_2)])
         return sharing_domain if sharing_cov >= domain_sharing_cov else None
 
-
-class DomainGraph:
     @staticmethod
-    def read_pfam_data(pfam_res_dir):
-        members = glob.glob(os.path.join(pfam_res_dir, '*.pfam'))
-        proteome_pfam = pd.concat([pd.read_csv(m, sep='\t', dtype={'LenCov': np.float64}) for m in members])
-        return proteome_pfam
-
-    @staticmethod
-    def generate_full_graph(group_df):
-        s = time.time()
-        es = []
-        filter_p = []
-        for name, group in group_df:
-            if name != '*':
-                es.extend(list(combinations(group['SeqIDs'].to_list(), 2)))
-                if len(name.split(';')) > 1:
-                    filter_p.append(name)
-        e = time.time()
-        print(f'full graph: {e - s}')
-        return filter_p, es
-
-    @staticmethod
-    def sharing_domain(pf_type1, pf_type2, domain_sharing_cov):
-        domain_1 = pf_type1.split(';')
-        domain_2 = pf_type2.split(';')
-        sharing_domain = list(set(domain_1) & set(domain_2))
-        sharing_cov = min([len(sharing_domain) / len(domain_1), len(sharing_domain) / len(domain_2)])
-        return sharing_domain if sharing_cov >= domain_sharing_cov else None
-
-    @staticmethod
-    def append_edges(pf_type1, pf_type2, pfams_group, sharing_domains, domain_length_cov):
-        # 过滤掉不共享的结构域的行
-        # 将结构域长度转化为数值
-        pf_df1 = pfams_group.get_group(pf_type1)
-        pf_df2 = pfams_group.get_group(pf_type2)
-        pf_df1 = pf_df1[pf_df1['Domain'].isin(sharing_domains)]
-        pf_df2 = pf_df2[pf_df2['Domain'].isin(sharing_domains)]
-        # group_df1, group_df2 = DomainGraph.split_cols(pf_df1, pf_df2, sharing_domains)
-        # 判断共有的结构域
-        seqs_cov1 = pf_df1.groupby('SeqIDs')['LenCov'].agg(lambda x: x.sum() >= domain_length_cov)
-        seqs_cov2 = pf_df2.groupby('SeqIDs')['LenCov'].agg(lambda x: x.sum() >= domain_length_cov)
-        seqs_meet = seqs_cov1[seqs_cov1].index.to_list()
-        seqs_meet2 = seqs_cov2[seqs_cov2].index.to_list()
-        edges = list(product(seqs_meet, seqs_meet2))
-        return edges
-
-    @staticmethod
-    def generate_final_graph(vs, es):
+    def generate_final_graph(vs, es, **kwargs):
         g = igraph.Graph()
         g.add_vertices(vs)
         g.add_edges(es)
+        g.vs['pfam'] = kwargs['pfam']
         return g
