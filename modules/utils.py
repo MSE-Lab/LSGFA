@@ -92,6 +92,7 @@ class FileOperator:
 
 
 class CmdManger:
+    # 用于管理命令
     def __init__(self, process: str = "", cmd: str = "", thread: str = "1"):
         self.process = process
         self.cmd = cmd
@@ -103,8 +104,7 @@ class CmdManger:
         elif self.process == 'diamond':
             self.cmd = ' '.join([
                 'diamond', 'blastp', '--more-sensitive', '-p', self.thread, '-q', query, '-d', '%s.dmnd' % db,
-                '--evalue 1e-5 -f 6', '--out', out_name, '--quiet', '--query-cover', '40',
-                '--subject-cover', '40'])
+                '--evalue 1e-5 -f 6', '--out', out_name, '--quiet'])
         elif self.process == 'mmseqs':
             self.cmd = ' '.join([
                 'mmseqs', 'easy-search', query, db, out_name, '/temp', '--threads', 'self.thread', '-v', '1',

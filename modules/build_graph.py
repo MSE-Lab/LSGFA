@@ -10,9 +10,10 @@ warnings.filterwarnings("ignore")
 
 
 class DomainType:
+    # 用于存放Domain的类型
     def __init__(self, name: str = "", domain_data: dict = None):
         self.name = name
-        self.domain_data = domain_data
+        self.domain_data = domain_data  # 存放domain的长度信息
         self.domain = self._get_domains()
         self.add_loci = []
 
@@ -32,6 +33,7 @@ class DomainType:
         return list(self.domain_data.keys())
 
     def sharing_domain_loci(self, sharing_domain, domain_length_cov):
+        # 用于判断是否满足长度阈值
         for loci, domain_cov_info in self.domain_data.items():
             domain_cov_sum = np.sum(
                 np.array(domain_cov_info['LenCov'])[np.isin(np.array(domain_cov_info['Domain']), sharing_domain)])
@@ -47,7 +49,7 @@ class PGraph(dict):
         self.node_attribute = []
         self.related_edges = []
         self.domains = domains
-        for m in members:
+        for m in members:   # 读取pfam的结果
             json_data = FileOperator(os.path.basename(m), pfam_res_dir, "json")
             json_data.read()
             for pfam_component, seq_info in json_data.data.items():
@@ -61,14 +63,14 @@ class PGraph(dict):
     def _generate_domain_info(self):
         domain_component = {}
         for pfam_component, seq_info in self.items():
-            pfam_ = DomainType(name=pfam_component, domain_data=seq_info)
+            pfam_ = DomainType(name=pfam_component, domain_data=seq_info)   # 实例化DomainType
             domain_component[pfam_component] = pfam_
         self.domains = domain_component
 
     def get_full_connected_edges(self):
         for pfam_, pfam_info in self.domains.items():
             self.genes.extend(pfam_info.get_sequences_ids())
-            self.node_attribute.extend([pfam_] * len(pfam_info))
+            self.node_attribute.extend([pfam_] * len(pfam_info))    # ???
 
     def get_append_edges(self, sharing_cov=0.5, len_cov=0.8):
         for pf_1, pf_2 in self._compared_domain_component_pairwise():
@@ -77,11 +79,12 @@ class PGraph(dict):
                 pf1_o = self.domains[pf_1]
                 pf2_o = self.domains[pf_2]
                 pf1_o.sharing_domain_loci(sharing_domains, len_cov)
-                pf2_o.sharing_domain_loci(sharing_domains, len_cov)
+                pf2_o.sharing_domain_loci(sharing_domains, len_cov)  # 判断有重合的两个pf_type间是否满足长度阈值
                 self.related_edges.extend(product(pf1_o.add_loci, pf2_o.add_loci))
 
     @staticmethod
     def sharing_domain(pf_type1, pf_type2, domain_sharing_cov):
+        # 判断有重合的两个pf_type间是否满足数量阈值
         domain_1 = pf_type1.split(';')
         domain_2 = pf_type2.split(';')
         sharing_domain = list(set(domain_1) & set(domain_2))
@@ -93,5 +96,5 @@ class PGraph(dict):
         g = igraph.Graph()
         g.add_vertices(vs)
         g.add_edges(es)
-        g.vs['pfam'] = kwargs['pfam']
+        g.vs['pfam'] = kwargs['pfam']   # 给节点添加pfam的属性
         return g
