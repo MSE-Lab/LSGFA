@@ -141,6 +141,7 @@ class Panproteome(list):
                     file.write(f"{proteome.name}\n")
 
     def make_sequences_info(self):
+        # 获取蛋白质id及其对应的序列
         SeqInfo = dict()
         genome: Proteome
         protein: Protein
@@ -161,11 +162,11 @@ class Panproteome(list):
 
     @staticmethod
     def make_pfam_graph(ou_dir):
-        pfam = PGraph(ou_dir)
-        pfam.get_full_connected_edges()
-        pfam.get_append_edges()
+        pfam = PGraph(ou_dir)   # 初始化
+        pfam.get_full_connected_edges()    # 生成全连通图
+        pfam.get_append_edges()  # 在不同连通图间添加边
         vs = pfam.genes
-        es = pfam.related_edges
+        es = pfam.related_edges  # 获取相连的边
         pfams = pfam.node_attribute
         basic_graph = PGraph.generate_final_graph(vs, es, pfam=pfams)
         basic_graph.write_gml(os.path.join(ou_dir, 'pfam_graph.gml'))

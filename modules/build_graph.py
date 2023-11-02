@@ -70,7 +70,7 @@ class PGraph(dict):
     def get_full_connected_edges(self):
         for pfam_, pfam_info in self.domains.items():
             self.genes.extend(pfam_info.get_sequences_ids())
-            self.node_attribute.extend([pfam_] * len(pfam_info))    # ???
+            self.node_attribute.extend([pfam_] * len(pfam_info))
 
     def get_append_edges(self, sharing_cov=0.5, len_cov=0.8):
         for pf_1, pf_2 in self._compared_domain_component_pairwise():
