@@ -136,6 +136,7 @@ class PfamG(list):
 		g = igraph.Graph()
 		edges = []
 		weights = []
+		print(f'number cluster:{len(self)}')
 		for cluster in self:
 			cluster: CommonD
 			genes_all = genes_all.union(set(cluster.genes))
@@ -148,21 +149,34 @@ class PfamG(list):
 		g.add_edges(edges)  # 添加边
 		g.es['weight'] = weights
 		g.write_gml(graph_file_name)	 # 生成图
+		core_cc = 0
+		for cc in g.components():
+			sub = g.subgraph(cc)
+			genomes = [n.split('|')[0] for n in sub.vs['name']]
+			genomes_set = set(genomes)
+			if len(genomes_set) >= max_genome:
+				core_cc += 1
+		print(f'Core CC Numbers: {core_cc}')
 		partition = la.find_partition(g, partition_type=la.RBERVertexPartition, weights='weight',
 									resolution_parameter=1)
 		print(f'partition numbers: {len(partition)}')
 		SOG = 0
 		HOG = 0
+		p_OG = 0
+		print(f'max_genome: {max_genome}')
+		print(len(partition))
 		for i in partition:
 			genome = [n['name'].split('|')[0] for n in g.vs[i]]
 			genome_set = set(genome)
-			if len(genome) >= max_genome:
+			if len(genome_set) >= max_genome:
+				p_OG += min(Counter(genome).values())
 				if len(genome_set) == len(genome):
 						SOG += 1
 				else:
 					HOG += 1
 		print(f'SOG: {SOG}')
 		print(f'HOG: {HOG}')
+		print(f'Potential OG: {p_OG}')
 		return partition
 
 
