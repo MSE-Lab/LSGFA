@@ -86,7 +86,7 @@ def og_searching(p_graph):
 @time_used(f"[{timing()}]MCL")
 def running_la(p_graph, max_genome):
     graph_name = os.path.join(OUT_DIR, "la.gml")
-    p_graph.la_graph(res_dir=RES_DIR, graph_file_name=graph_name, max_genome=max_genome)
+    p_graph.la_graph(res_dir=RES_DIR, graph_file_name=graph_name, max_genome=max_genome, og_dir=OG_DIR)
 
 
 @time_used(f"[{timing()}]Writing orthogroups")
@@ -110,16 +110,17 @@ def main():
     print(f'genomes Numbers: {max_genome}')
 
     # pfam graph construction
+    # build_pfam_graph(input_genomes_dir)
     test_graph, SEQ_INFO = build_pfam_graph(input_genomes_dir)
     # homology searching
     p_graph = PfamG(test_graph, method=search_method)
-    # og_searching(p_graph)
+    og_searching(p_graph)
     # mcl
     running_la(p_graph, max_genome)
     # writing OGs
-    # write_og_files(og_path=OG_DIR,
-    #                max_g=max_genome,
-    #                seq_info=SEQ_INFO)
+    write_og_files(og_path=OG_DIR,
+                   max_g=max_genome,
+                   seq_info=SEQ_INFO)
 
 
 if __name__ == '__main__':

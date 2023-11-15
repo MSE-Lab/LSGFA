@@ -104,7 +104,8 @@ class CmdManger:
         elif self.process == 'diamond':
             self.cmd = ' '.join([
                 'diamond', 'blastp', '--more-sensitive', '-p', self.thread, '-q', query, '-d', '%s.dmnd' % db,
-                '--evalue 1e-5 -f 6', '--out', out_name, '--quiet', '--query-cover', '50', '--subject-cover', '50'])
+                '--evalue 1e-5 -f 6', '--out', out_name, '--quiet', '--query-cover', '50', '--subject-cover', '50',
+                '-k0'])
         elif self.process == 'mmseqs':
             self.cmd = ' '.join([
                 'mmseqs', 'easy-search', query, db, out_name, '/temp', '--threads', 'self.thread', '-v', '1',

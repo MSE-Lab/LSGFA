@@ -22,8 +22,10 @@ class Protein:
 
     def _hmm_profile(self, scan_out):
         aHits = Hits(scan_out)
-        hits_clean = aHits.ana_relations()
-        self.domain = hits_clean
+        for i in aHits:
+            print('i.id  ',i.id)
+            print('i.percent  ',i.percent)
+        self.domain = aHits  # domain是很多pfam的组合
 
     def _hmm_scan(self, evalue='1e-5'):
         in_temp = make_temp_file(prefix='in_', close=False)
@@ -47,7 +49,7 @@ class Protein:
     def identify_pfam(self, queue, evalue='1e-5'):
         out_hmmscan = self._hmm_scan(evalue)
         os.unlink(out_hmmscan)
-        # 通过进程池 Protein.domain 似乎无法更新，所以吧结果put出来在进程池外再更新
+        # 通过进程池 Protein.domain 似乎无法更新，所以把结果put出来在进程池外再更新
         queue.put((self.name, self.domain))
 
 
@@ -65,7 +67,7 @@ class Proteome(list):
     def _read_fasta(self, fasta_name):
         fasta_file = Fasta(fasta_name)
         for seqid, seq in fasta_file.items():
-            seqid = seqid.split(" ")[0]
+            seqid = seqid.split(" ")[0]  # 去除faa文件里的功能描述部分
             aProtein = Protein(name=seqid, sequence=seq)
             self.append(aProtein)
         self.name = os.path.basename(fasta_name).replace('.faa', '')
@@ -102,9 +104,12 @@ class Proteome(list):
             domain_list = protein.domain
             if domain_list:
                 combined = ";".join(sorted([d.id for d in domain_list]))
+                print(combined)
                 for domain_o in domain_list:
                     proteome_domain[combined][protein.name]["Domain"].append(domain_o.id)
+                    print('domain_o.id  ',domain_o.id)
                     proteome_domain[combined][protein.name]["LenCov"].append(domain_o.percent)
+                    print('domain_o.percent   ',domain_o.percent)
             else:
                 proteome_domain["None"][protein.name]["Domain"] = list()
                 proteome_domain["None"][protein.name]["LenCov"] = list()

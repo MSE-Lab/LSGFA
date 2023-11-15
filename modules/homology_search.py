@@ -130,13 +130,12 @@ class PfamG(list):
 			search_cmds.append(search_cmd)
 		return db_cmds, search_cmds
 
-	def la_graph(self, res_dir, graph_file_name, max_genome):
+	def la_graph(self, res_dir, graph_file_name, max_genome, og_dir):
 		genes_all = set()  # 存放所有的基因
 		paired_genes_all = set()
 		g = igraph.Graph()
 		edges = []
 		weights = []
-		print(f'number cluster:{len(self)}')
 		for cluster in self:
 			cluster: CommonD
 			genes_all = genes_all.union(set(cluster.genes))
@@ -149,22 +148,25 @@ class PfamG(list):
 		g.add_edges(edges)  # 添加边
 		g.es['weight'] = weights
 		g.write_gml(graph_file_name)	 # 生成图
-		core_cc = 0
+
+		# 以下部分是输出ssn网络CC的节点信息
+		node_string = ''
+		n = 0
 		for cc in g.components():
-			sub = g.subgraph(cc)
-			genomes = [n.split('|')[0] for n in sub.vs['name']]
-			genomes_set = set(genomes)
-			if len(genomes_set) >= max_genome:
-				core_cc += 1
-		print(f'Core CC Numbers: {core_cc}')
+			cc_num = f'CC{n:0>7}:'
+			node_names = ' '.join([g.vs[node]['name'] for node in cc])
+			n += 1
+			node_string += f'{cc_num} {node_names}\n'
+		cc_file = FileOperator(name='cc_node.txt', dir_=og_dir, data=node_string)
+		cc_file.write()
+
 		partition = la.find_partition(g, partition_type=la.RBERVertexPartition, weights='weight',
 									resolution_parameter=1)
-		print(f'partition numbers: {len(partition)}')
+		# print(f'partition numbers: {len(partition)}')
 		SOG = 0
 		HOG = 0
 		p_OG = 0
 		print(f'max_genome: {max_genome}')
-		print(len(partition))
 		for i in partition:
 			genome = [n['name'].split('|')[0] for n in g.vs[i]]
 			genome_set = set(genome)
