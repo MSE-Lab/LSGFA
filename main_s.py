@@ -84,9 +84,11 @@ def og_searching(p_graph):
 
 
 @time_used(f"[{timing()}]MCL")
-def running_la(p_graph, max_genome):
-    graph_name = os.path.join(OUT_DIR, "la.gml")
-    p_graph.la_graph(res_dir=RES_DIR, graph_file_name=graph_name, max_genome=max_genome, og_dir=OG_DIR)
+def running_mcl(p_graph):
+    abc_name = os.path.join(OUT_DIR, "mcl.abc")
+    out_name = os.path.join(OUT_DIR, "mcl.cluster.txt")
+    p_graph.mcl_abc(res_dir=RES_DIR, abc_file_name=abc_name, threads=THREADS, out_name=out_name,
+                    inflation=INFLATION)
 
 
 @time_used(f"[{timing()}]Writing orthogroups")
@@ -116,9 +118,10 @@ def main():
     p_graph = PfamG(test_graph, method=search_method)
     og_searching(p_graph)
     # mcl
-    running_la(p_graph, max_genome)
+    running_mcl(p_graph)
     # writing OGs
-    write_og_files(og_path=OG_DIR,
+    out_name = os.path.join(OUT_DIR, "mcl.cluster.txt")
+    write_og_files(mcl_cluster_file=out_name, og_path=OG_DIR,
                    max_g=max_genome,
                    seq_info=SEQ_INFO)
 

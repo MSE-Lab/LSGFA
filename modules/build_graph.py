@@ -42,6 +42,7 @@ class DomainType:
 
 
 class PGraph(dict):
+    # 存放Pfam的连通图
     def __init__(self, pfam_res_dir: str = "", domains: dict = None):
         super(PGraph, self).__init__()
         members = glob.glob(os.path.join(pfam_res_dir, '*.pfam'))
@@ -74,9 +75,10 @@ class PGraph(dict):
 
     def get_append_edges(self, sharing_cov=0.5, len_cov=0.8):
         for pf_1, pf_2 in self._compared_domain_component_pairwise():
-            sharing_domains = self.sharing_domain(pf_1, pf_2, sharing_cov)
-            if sharing_domains is not None:
-                pf1_o = self.domains[pf_1]
+            # 两个不同domain的CC的组合
+            sharing_domains = self.sharing_domain(pf_1, pf_2, sharing_cov)  # CC间有共同的PF
+            if sharing_domains is not None:  # 如果有共享的pfam
+                pf1_o = self.domains[pf_1]  # 索引两个domain对应的DomainType对象
                 pf2_o = self.domains[pf_2]
                 pf1_o.sharing_domain_loci(sharing_domains, len_cov)
                 pf2_o.sharing_domain_loci(sharing_domains, len_cov)  # 判断有重合的两个pf_type间是否满足长度阈值

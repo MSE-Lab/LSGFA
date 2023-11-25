@@ -7,7 +7,8 @@ from modules.build_graph import *
 from modules.pfam import *
 
 # pfamDB = os.path.join(os.getcwd(), 'modules', 'Pfam-A.hmm')
-pfamDB = '/media/disk2/biodatabases/Pfam/Pfam-A.hmm'
+# pfamDB = '/media/disk2/biodatabases/Pfam/Pfam-A.hmm'
+pfamDB = '/home/biodbs/Pfam35.0/Pfam-A.hmm'
 
 
 class Protein:
@@ -22,9 +23,6 @@ class Protein:
 
     def _hmm_profile(self, scan_out):
         aHits = Hits(scan_out)
-        for i in aHits:
-            print('i.id  ',i.id)
-            print('i.percent  ',i.percent)
         self.domain = aHits  # domain是很多pfam的组合
 
     def _hmm_scan(self, evalue='1e-5'):
@@ -104,12 +102,9 @@ class Proteome(list):
             domain_list = protein.domain
             if domain_list:
                 combined = ";".join(sorted([d.id for d in domain_list]))
-                print(combined)
                 for domain_o in domain_list:
                     proteome_domain[combined][protein.name]["Domain"].append(domain_o.id)
-                    print('domain_o.id  ',domain_o.id)
                     proteome_domain[combined][protein.name]["LenCov"].append(domain_o.percent)
-                    print('domain_o.percent   ',domain_o.percent)
             else:
                 proteome_domain["None"][protein.name]["Domain"] = list()
                 proteome_domain["None"][protein.name]["LenCov"] = list()

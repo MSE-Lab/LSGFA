@@ -4,7 +4,6 @@ import igraph
 from igraph import Graph
 from modules.utils import *
 from collections import Counter
-import leidenalg as la
 
 
 class CommonD:
@@ -45,8 +44,8 @@ class CommonD:
 		search_cmd = cmd_o.cmd
 		return db_cmd, search_cmd
 
-	def parse_homology_search(self, res_path):  # 处理同源搜索的结果
-		paried_dict = {}  # 存放两向的结果
+	def parse_homology_search(self, res_path):  # 并行
+		abc_dict = {}  # 存放两向的结果
 		file = FileOperator(name=f'{self.name}-{self.name}.txt', dir_=res_path)
 		file.read()
 		ids = set()  # 存放在identity上满足条件的id
@@ -64,24 +63,24 @@ class CommonD:
 					if ident >= 0:
 						ids.add(id1)
 						ids.add(id2)
-						if ID not in paried_dict and ID_reverse not in paried_dict:
-							paried_dict[ID] = bitscore
-						elif ID not in paried_dict and ID_reverse in paried_dict:
-							paried_dict[ID_reverse] = (bitscore + paried_dict[ID_reverse]) / 2
-						elif ID in paried_dict and ID_reverse not in paried_dict:
-							paried_dict[ID] = (bitscore + paried_dict[ID]) / 2  # 计算两项的平均值
+						if ID not in abc_dict and ID_reverse not in abc_dict:
+							abc_dict[ID] = bitscore
+						elif ID not in abc_dict and ID_reverse in abc_dict:
+							abc_dict[ID_reverse] = (bitscore + abc_dict[ID_reverse]) / 2
+						elif ID in abc_dict and ID_reverse not in abc_dict:
+							abc_dict[ID] = (bitscore + abc_dict[ID]) / 2  # 计算两项的平均值
 			except (IndexError, ValueError):
 				sys.stderr.write(
 					"\nERROR: Query or hit sequence ID in BLAST results file was missing or incorrectly formatted.\n")
 				raise
-		paired_genes = ids	# 两两配对的gene
+		paired_genes = ids
+		abc_string = ""
 		edges = []
-		weights = []
-		for id,weight in paried_dict.items():
-			edges.append(id.split("\t"))  # 获得一对边的列表
-			weights.append(weight)  # 获取权重
-		if paried_dict:	# 如果dict内容存在
-			return paired_genes, weights, edges
+		for k, v in abc_dict.items():
+			abc_string += f"{k}\t{v}\n"
+			edges.append(k.split("\t"))
+		if abc_dict:
+			return paired_genes, abc_string, edges
 		else:
 			return paired_genes, None, None
 
@@ -111,8 +110,6 @@ class PfamG(list):
 	def _get_pfam_cluster(self):
 		# 连通图单独计算
 		for n, pfam_c in enumerate(self._get_pfam_combination()):
-			if pfam_c == 'None':
-				print(f'PD{n:0>7}', len(self.graph.vs.select(pfam=pfam_c)))
 			genes = [node['name'] for node in self.graph.vs.select(pfam=pfam_c)]  # 获得当前pfam的名字
 			common_domain = CommonD(name=f'PD{n:0>7}', genes=genes, method=self.method)
 			# 初始化
@@ -130,56 +127,41 @@ class PfamG(list):
 			search_cmds.append(search_cmd)
 		return db_cmds, search_cmds
 
-	def la_graph(self, res_dir, graph_file_name, max_genome, og_dir):
-		genes_all = set()  # 存放所有的基因
+	def mcl_abc(self, res_dir, abc_file_name, threads, inflation, out_name):
+		genes_all = set()
 		paired_genes_all = set()
-		g = igraph.Graph()
+		abc_all = ""
 		edges = []
-		weights = []
+
 		for cluster in self:
 			cluster: CommonD
 			genes_all = genes_all.union(set(cluster.genes))
-			paired_genes, weight, edge_c = cluster.parse_homology_search(res_dir)
+			paired_genes, abc, edge_c = cluster.parse_homology_search(res_dir)
 			paired_genes_all = paired_genes_all.union(paired_genes)
-			if weight is not None:	 # 如果边的权重为0，则不添加边
+			if abc is not None:
+				abc_all += abc + '\n'
 				edges.extend(edge_c)
-				weights.extend(weight)
-		g.add_vertices(list(genes_all))	 # 添加节点
-		g.add_edges(edges)  # 添加边
-		g.es['weight'] = weights
-		g.write_gml(graph_file_name)	 # 生成图
+		abc_o = FileOperator(name=os.path.basename(abc_file_name), dir_=os.path.dirname(abc_file_name), data=abc_all)
+		abc_o.write()
+		mcl_o = CmdManger(thread=str(threads))
+		mcl_o.mcl(abc_file_name, inflation, out_name)
+		mcl_cmd = mcl_o.cmd
+		call_mcl_cmd = CallCmd([mcl_cmd], process_info="MCL cluster", parallel=False)
+		call_mcl_cmd.processing()  # mcl聚类
 
+		g = igraph.Graph()
+		g.add_vertices(list(genes_all))
+		g.add_edges(edges)
+		n = 0
 		# 以下部分是输出ssn网络CC的节点信息
 		node_string = ''
-		n = 0
 		for cc in g.components():
 			cc_num = f'CC{n:0>7}:'
 			node_names = ' '.join([g.vs[node]['name'] for node in cc])
 			n += 1
 			node_string += f'{cc_num} {node_names}\n'
-		cc_file = FileOperator(name='cc_node.txt', dir_=og_dir, data=node_string)
+		cc_file = FileOperator(name='cc_node.txt', dir_=res_dir, data=node_string)
 		cc_file.write()
-
-		partition = la.find_partition(g, partition_type=la.RBERVertexPartition, weights='weight',
-									resolution_parameter=1)
-		# print(f'partition numbers: {len(partition)}')
-		SOG = 0
-		HOG = 0
-		p_OG = 0
-		print(f'max_genome: {max_genome}')
-		for i in partition:
-			genome = [n['name'].split('|')[0] for n in g.vs[i]]
-			genome_set = set(genome)
-			if len(genome_set) >= max_genome:
-				p_OG += min(Counter(genome).values())
-				if len(genome_set) == len(genome):
-						SOG += 1
-				else:
-					HOG += 1
-		print(f'SOG: {SOG}')
-		print(f'HOG: {HOG}')
-		print(f'Potential OG: {p_OG}')
-		return partition
 
 
 class OGs:
