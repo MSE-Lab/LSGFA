@@ -32,7 +32,7 @@ class Hits(list):
             pfam_id = split_line[1]
             pfam_start = int(split_line[17])
             pfam_end = int(split_line[18])
-            pfam_hit_length = pfam_end - pfam_start
+            pfam_hit_length = pfam_end - pfam_start + 1
             seq_len = int(split_line[5])
             pfam_percent = pfam_hit_length / seq_len
             aPfam = Pfam(pfam_id=pfam_id,

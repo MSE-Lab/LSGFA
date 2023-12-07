@@ -107,23 +107,24 @@ def main():
     THREADS = parameters['search_threads']
     search_method = parameters['search_method']
     INFLATION = parameters['inflation_co']
-    make_working_dir()
+    # make_working_dir()
     max_genome = len([file for file in os.listdir(input_genomes_dir) if file.split(".")[-1] == 'faa'])
     print(f'genomes Numbers: {max_genome}')
 
     # pfam graph construction
-    # build_pfam_graph(input_genomes_dir)
-    test_graph, SEQ_INFO = build_pfam_graph(input_genomes_dir)
+    build_pfam_graph(input_genomes_dir)
+
+    # test_graph, SEQ_INFO = build_pfam_graph(input_genomes_dir)
     # homology searching
-    p_graph = PfamG(test_graph, method=search_method)
-    og_searching(p_graph)
+    # p_graph = PfamG(test_graph, method=search_method)
+    # og_searching(p_graph)
     # mcl
-    running_mcl(p_graph)
+    # running_mcl(p_graph)
     # writing OGs
-    out_name = os.path.join(OUT_DIR, "mcl.cluster.txt")
-    write_og_files(mcl_cluster_file=out_name, og_path=OG_DIR,
-                   max_g=max_genome,
-                   seq_info=SEQ_INFO)
+    # out_name = os.path.join(OUT_DIR, "mcl.cluster.txt")
+    # write_og_files(mcl_cluster_file=out_name, og_path=OG_DIR,
+    #                max_g=max_genome,
+    #                seq_info=SEQ_INFO)
 
 
 if __name__ == '__main__':

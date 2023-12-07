@@ -15,7 +15,7 @@ class DomainType:
         self.name = name
         self.domain_data = domain_data  # 存放domain的长度信息
         self.domain = self._get_domains()
-        self.add_loci = []
+        # self.add_loci = []
 
     def __str__(self):
         return self.name
@@ -34,11 +34,14 @@ class DomainType:
 
     def sharing_domain_loci(self, sharing_domain, domain_length_cov):
         # 用于判断是否满足长度阈值
+        add_loci = []
         for loci, domain_cov_info in self.domain_data.items():
             domain_cov_sum = np.sum(
                 np.array(domain_cov_info['LenCov'])[np.isin(np.array(domain_cov_info['Domain']), sharing_domain)])
             if domain_cov_sum >= domain_length_cov:
-                self.add_loci.append(loci)
+                # self.add_loci.append(loci)
+                add_loci.append(loci)
+        return add_loci
 
 
 class PGraph(dict):
@@ -54,11 +57,16 @@ class PGraph(dict):
             json_data = FileOperator(os.path.basename(m), pfam_res_dir, "json")
             json_data.read()
             for pfam_component, seq_info in json_data.data.items():
-                self.setdefault(pfam_component, dict()).update(seq_info)
+                for gene, value in seq_info.items():
+                    if sum(value['LenCov']) <= 0.6:
+                        pfam_ = "None"
+                    else:
+                        pfam_ = pfam_component
+                    self.setdefault(pfam_, dict()).update({gene: value})
         self._generate_domain_info()
 
     def _compared_domain_component_pairwise(self):
-        domain_components = [k for k in self.keys() if len(k.split(";")) > 1]
+        domain_components = [k for k in self.keys() if k != 'None']
         return list(combinations(domain_components, 2))
 
     def _generate_domain_info(self):
@@ -69,29 +77,36 @@ class PGraph(dict):
         self.domains = domain_component
 
     def get_full_connected_edges(self):
+        # 获得全连通图，给同样domain的节点添加pfam的信息
         for pfam_, pfam_info in self.domains.items():
-            self.genes.extend(pfam_info.get_sequences_ids())
-            self.node_attribute.extend([pfam_] * len(pfam_info))
+            if pfam_ != 'None':
+                self.genes.extend(pfam_info.get_sequences_ids())
+                # self.related_edges.extend(list(combinations(pfam_info.get_sequences_ids(), 2)))
+                self.node_attribute.extend([pfam_] * len(pfam_info))
+            else:
+                self.genes.extend(pfam_info.get_sequences_ids())
+                self.node_attribute.extend([pfam_] * len(pfam_info))
 
-    def get_append_edges(self, sharing_cov=0.5, len_cov=0.8):
+    def get_append_edges(self, sharing_lencov=0.5):
         for pf_1, pf_2 in self._compared_domain_component_pairwise():
             # 两个不同domain的CC的组合
-            sharing_domains = self.sharing_domain(pf_1, pf_2, sharing_cov)  # CC间有共同的PF
+            sharing_domains = self.sharing_domain(pf_1, pf_2)  # CC间有共同的PF
             if sharing_domains is not None:  # 如果有共享的pfam
                 pf1_o = self.domains[pf_1]  # 索引两个domain对应的DomainType对象
                 pf2_o = self.domains[pf_2]
-                pf1_o.sharing_domain_loci(sharing_domains, len_cov)
-                pf2_o.sharing_domain_loci(sharing_domains, len_cov)  # 判断有重合的两个pf_type间是否满足长度阈值
-                self.related_edges.extend(product(pf1_o.add_loci, pf2_o.add_loci))
+                add_loci_1 = pf1_o.sharing_domain_loci(sharing_domains, sharing_lencov)
+                add_loci_2 = pf2_o.sharing_domain_loci(sharing_domains, sharing_lencov)
+                # 判断有重合的两个pf_type间是否满足长度阈值
+                self.related_edges.extend(product(add_loci_1, add_loci_2))
 
     @staticmethod
-    def sharing_domain(pf_type1, pf_type2, domain_sharing_cov):
-        # 判断有重合的两个pf_type间是否满足数量阈值
+    def sharing_domain(pf_type1, pf_type2):
+        # 判断两个pf_type间是否有重合
         domain_1 = pf_type1.split(';')
         domain_2 = pf_type2.split(';')
         sharing_domain = list(set(domain_1) & set(domain_2))
-        sharing_cov = min([len(sharing_domain) / len(domain_1), len(sharing_domain) / len(domain_2)])
-        return sharing_domain if sharing_cov >= domain_sharing_cov else None
+        len_sharing_domain = len(sharing_domain)
+        return sharing_domain if len_sharing_domain > 0 else None
 
     @staticmethod
     def generate_final_graph(vs, es, **kwargs):
