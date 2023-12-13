@@ -1,10 +1,11 @@
 import shutil
 import subprocess
-from collections import defaultdict
+from collections import defaultdict, Counter
 from multiprocessing import Pool, Manager
 from pyfasta import Fasta
 from modules.build_graph import *
 from modules.pfam import *
+from modules.pfam_network import *
 
 # pfamDB = os.path.join(os.getcwd(), 'modules', 'Pfam-A.hmm')
 # pfamDB = '/media/disk2/biodatabases/Pfam/Pfam-A.hmm'
@@ -165,9 +166,36 @@ class Panproteome(list):
         pfam = PGraph(ou_dir)   # 初始化
         pfam.get_full_connected_edges()    # 生成全连通图
         pfam.get_append_edges()  # 在不同连通图间添加边
-        vs = pfam.genes
-        es = pfam.related_edges  # 获取相连的边
-        pfams = pfam.node_attribute
-        basic_graph = PGraph.generate_final_graph(vs, es, pfam=pfams)
+        basic_graph = pfam.get_full_connected_edges()
         basic_graph.write_gml(os.path.join(ou_dir, 'pfam_graph.gml'))
-        return basic_graph
+
+        pfams = pfam.node_attribute
+        simplify_pg = igraph.Graph()
+        pfam_vs = list(set(pfams))  # 从图中获取所有pfam_type
+        simplify_pg.add_vertices(pfam_vs)  # pfam_type作为节点添加
+        pfam_gene_dict = {value: [node["name"] for node in basic_graph.vs.select(pfam=value)]
+                          for value in pfam_vs}  # 存储相同pfam属性节点的gene列表
+        for v in simplify_pg.vs:  # 将gene列表作为属性添加到s_pg节点
+            pf = v["name"]
+            v["genes"] = pfam_gene_dict.get(pf, None)
+            if pf in pfam_gene_dict:
+                v["gene_num"] = len(pfam_gene_dict[pf])
+
+        s_edges_list = [tuple(sorted([basic_graph.vs[e.source]["pfam"], basic_graph.vs[e.target]["pfam"]]))
+                   for e in basic_graph.es]  # 获取simplify_pg的所有边
+        s_edges_dict = Counter(s_edges_list)  # 计算相同节点名称的边有几个
+        s_edges = list(set(s_edges_list))
+        s_weight_list = []  #获取权重
+        for i in s_edges:
+            pfam_1, pfam_2 = i
+            len_1 = len(simplify_pg.vs.find(name=pfam_1)['genes'])
+            len_2 = len(simplify_pg.vs.find(name=pfam_2)['genes'])
+            weight = (s_edges_dict[i]) / (len_1 * len_2)
+            s_weight_list.append(weight)
+        simplify_pg.add_edges(s_edges)
+        simplify_pg.es["weight"] = s_weight_list
+
+        simplify_pg.write_gml(os.path.join(ou_dir, 'simplify_pfam_graph.gml'))
+        simplify_pg.write_ncol(os.path.join(ou_dir, 'simplify_pfam_graph.txt'))
+
+        return simplify_pg

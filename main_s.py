@@ -6,6 +6,7 @@
 from optparse import OptionGroup, OptionParser
 from modules.homology_search import *
 from modules.panproteome import *
+import leidenalg as la
 
 global OUT_DIR, DB_DIR, RES_DIR, QUERY_DIR, OG_DIR, THREADS, SEQ_INFO, INFLATION
 
@@ -66,9 +67,9 @@ def make_working_dir():
 def build_pfam_graph(input_genomes):
     pp = Panproteome(input_genomes)
     pp.put_pfam_file(threads=100, outdir=OUT_DIR)   # pfam注释
-    pfam_graph = pp.make_pfam_graph(OUT_DIR)    # 生成graph
+    simplify_pfam_graph = pp.make_pfam_graph(OUT_DIR)    # 生成graph
     genome_info = pp.make_sequences_info()  # 获取蛋白质id及其对应的序列
-    return pfam_graph, genome_info
+    return simplify_pfam_graph, genome_info
 
 
 @time_used(f'[{timing()}]Homology searching')
@@ -97,6 +98,55 @@ def write_og_files(mcl_cluster_file, og_path, max_g, seq_info):
     clusters.write_og(seq_path=og_path, seq_info=seq_info)
 
 
+@time_used(f"[{timing()}]Find communities")
+def la_find_partition(simplify_pfam_graph, max_genome, outfile_name):
+    partition = la.find_partition(simplify_pfam_graph, partition_type=la.CPMVertexPartition, weights='weight',
+                                  resolution_parameter=0.9)
+    result = ''
+    scc_num = 0
+    for community in partition:
+        community_subgraph = simplify_pfam_graph.subgraph(community)
+        mode_in_community = community_subgraph.vs['name']
+        # mode = '  '.join(mode_in_community)
+        genes_in_community = [item for sublist in community_subgraph.vs['genes'] for item in sublist]
+        genomes_list = [n.split('|')[0] for n in genes_in_community]
+        genomes_set = set(genomes_list)  # 判断该community是否是核心
+        if len(genomes_set) >= max_genome:
+            p_OG = min(Counter(genomes_list).values())  # 获取每个PG的大小
+        else:
+            p_OG = 0
+        result += f'SCC{scc_num:0>7}\t{len(mode_in_community)}\t{len(genes_in_community)}\t{p_OG}\n'
+        scc_num += 1
+    with open(outfile_name, 'w') as f:
+        title = '#S_ID\tMode_num\tS_size\tPotential_og\n'
+        f.write(title)
+        f.write(result)
+
+def get_resolution_profile(simplify_pfam_graph, max_genome, outfile_name):
+    optimiser = la.Optimiser()
+    profile = optimiser.resolution_profile(simplify_pfam_graph, la.CPMVertexPartition,
+                                           resolution_range=(0, 1),
+                                           weights='weight')
+    result = ''
+    for p in profile:  # 每个参数的结果循环
+        p_sub = p.subgraphs()  # 生成网络
+        p_OG = 0
+        for p_s in p_sub:  # 每个社区计算
+            # mode = '  '.join(p_s.vs['name'])
+            genes_in_community = [item for sublist in p_s.vs['genes'] for item in sublist]
+            genomes_list = [n.split('|')[0] for n in genes_in_community]
+            genomes_set = set(genomes_list)  # 判断该community是否是核心
+            if len(genomes_set) >= max_genome:
+                p_OG += min(Counter(genomes_list).values())  # 获取每个PG的大小
+            else:
+                p_OG += 0
+        result += f'{p.resolution_parameter}\t{len(p.subgraphs())}\t{p_OG}\n'
+    with open(outfile_name, 'w') as f:
+        title = '#resolution_parameter\tcommunity_num\tPotential_og\n'
+        f.write(title)
+        f.write(result)
+
+
 @time_used(f"[{timing()}]Whole processing Done")
 def main():
     # general options
@@ -112,7 +162,9 @@ def main():
     print(f'genomes Numbers: {max_genome}')
 
     # pfam graph construction
-    build_pfam_graph(input_genomes_dir)
+    s_pg, s_info = build_pfam_graph(input_genomes_dir)
+    # la_find_partition(s_pg, max_genome, os.path.join(OUT_DIR, 's_pg_count_og.txt'))
+    get_resolution_profile(s_pg, max_genome, os.path.join(OUT_DIR, 'resolution_profile.txt'))
 
     # test_graph, SEQ_INFO = build_pfam_graph(input_genomes_dir)
     # homology searching

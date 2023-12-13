@@ -108,10 +108,11 @@ class PGraph(dict):
         len_sharing_domain = len(sharing_domain)
         return sharing_domain if len_sharing_domain > 0 else None
 
-    @staticmethod
-    def generate_final_graph(vs, es, **kwargs):
-        g = igraph.Graph()
-        g.add_vertices(vs)
-        g.add_edges(es)
-        g.vs['pfam'] = kwargs['pfam']   # 给节点添加pfam的属性
-        return g
+    def generate_final_graph(self, **kwargs):
+        basic_graph = igraph.Graph()
+        vs = self.genes
+        es = self.related_edges  # 获取相连的边
+        basic_graph.add_vertices(vs)
+        basic_graph.add_edges(es)
+        basic_graph.vs['pfam'] = kwargs['pfam']   # 给节点添加pfam的属性
+        return basic_graph
