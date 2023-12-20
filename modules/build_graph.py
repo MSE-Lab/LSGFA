@@ -1,9 +1,9 @@
-import glob
-import os
 import warnings
-from itertools import combinations, product
+from itertools import combinations
 import igraph
-import numpy as np
+from modules import panproteome
+import leidenalg as la
+from collections import Counter
 from modules.utils import *
 
 warnings.filterwarnings("ignore")
@@ -11,108 +11,123 @@ warnings.filterwarnings("ignore")
 
 class DomainType:
     # 用于存放Domain的类型
-    def __init__(self, name: str = "", domain_data: dict = None):
-        self.name = name
-        self.domain_data = domain_data  # 存放domain的长度信息
+    def __init__(self, proteins: list, name: str = ""):
+        self.name = name  # pfam_type
+        self.proteins = proteins  # 该pfam_type所包含的protein对象
         self.domain = self._get_domains()
-        # self.add_loci = []
 
     def __str__(self):
         return self.name
 
-    def __repr__(self):
-        print(self.domain)
-
-    def __len__(self):
-        return len(self.get_sequences_ids())
+    # def __repr__(self):
+    #     return self.name
 
     def _get_domains(self):
-        return set(self.name.split(";"))
-
-    def get_sequences_ids(self):
-        return list(self.domain_data.keys())
+        return set(self.name.split(","))
 
     def sharing_domain_loci(self, sharing_domain, domain_length_cov):
         # 用于判断是否满足长度阈值
-        add_loci = []
-        for loci, domain_cov_info in self.domain_data.items():
-            domain_cov_sum = np.sum(
-                np.array(domain_cov_info['LenCov'])[np.isin(np.array(domain_cov_info['Domain']), sharing_domain)])
+        matching_protein = 0
+        for protein in self.proteins:  # overlap的pfam
+            domain_cov_sum = sum([pfam.percent for pfam in protein.domain if pfam.id in sharing_domain])
             if domain_cov_sum >= domain_length_cov:
-                # self.add_loci.append(loci)
-                add_loci.append(loci)
-        return add_loci
+                matching_protein += 1
+        return matching_protein
 
 
-class PGraph(dict):
-    # 存放Pfam的连通图
-    def __init__(self, pfam_res_dir: str = "", domains: dict = None):
+class PGraph:
+    def __init__(self, proteomes: panproteome):
         super(PGraph, self).__init__()
-        members = glob.glob(os.path.join(pfam_res_dir, '*.pfam'))
-        self.genes = []
-        self.node_attribute = []
-        self.related_edges = []
-        self.domains = domains
-        for m in members:   # 读取pfam的结果
-            json_data = FileOperator(os.path.basename(m), pfam_res_dir, "json")
-            json_data.read()
-            for pfam_component, seq_info in json_data.data.items():
-                for gene, value in seq_info.items():
-                    if sum(value['LenCov']) <= 0.6:
-                        pfam_ = "None"
-                    else:
-                        pfam_ = pfam_component
-                    self.setdefault(pfam_, dict()).update({gene: value})
-        self._generate_domain_info()
+        self.domain_type = []  # 保存pfam_type属性
+        self.connection = {}  # 用字典来保存connection属性，key是边的两个节点，value是权重
+        self.graph = None  # 存储该PGraph的图
+        domain_dict = {}
+        for proteome in proteomes:
+            for protein in proteome:  # 对protein重新分类，实例化DomainType
+                if sum([i.percent for i in protein.domain]) <= 0.6:
+                    pfam_ = "None"
+                else:
+                    pfam_ = ','.join(sorted([i.id for i in protein.domain]))
+                if pfam_ in domain_dict:
+                    domain_dict[pfam_].append(protein)
+                else:
+                    domain_dict[pfam_] = [protein]
+        for k, v in domain_dict.items():
+            aDomainType = DomainType(name=k, proteins=v)
+            self.domain_type.append(aDomainType)
+        self._get_edges()  # 获取边的信息
+
+    def get_domain_type(self):
+        return list(i.name for i in self.domain_type)
 
     def _compared_domain_component_pairwise(self):
-        domain_components = [k for k in self.keys() if k != 'None']
+        domain_components = [k for k in self.domain_type if k.name != 'None']
         return list(combinations(domain_components, 2))
 
-    def _generate_domain_info(self):
-        domain_component = {}
-        for pfam_component, seq_info in self.items():
-            pfam_ = DomainType(name=pfam_component, domain_data=seq_info)   # 实例化DomainType
-            domain_component[pfam_component] = pfam_
-        self.domains = domain_component
-
-    def get_full_connected_edges(self):
-        # 获得全连通图，给同样domain的节点添加pfam的信息
-        for pfam_, pfam_info in self.domains.items():
-            if pfam_ != 'None':
-                self.genes.extend(pfam_info.get_sequences_ids())
-                # self.related_edges.extend(list(combinations(pfam_info.get_sequences_ids(), 2)))
-                self.node_attribute.extend([pfam_] * len(pfam_info))
-            else:
-                self.genes.extend(pfam_info.get_sequences_ids())
-                self.node_attribute.extend([pfam_] * len(pfam_info))
-
-    def get_append_edges(self, sharing_lencov=0.5):
-        for pf_1, pf_2 in self._compared_domain_component_pairwise():
-            # 两个不同domain的CC的组合
-            sharing_domains = self.sharing_domain(pf_1, pf_2)  # CC间有共同的PF
+    def _get_edges(self, sharing_lencov=0.5):  # overlap的pfam占各自序列的0.5以上
+        edges = dict()
+        for pfam_type1, pfam_type2 in self._compared_domain_component_pairwise():  # 两个不同domain的CC的组合
+            sharing_domains = self.sharing_domain(pfam_type1.domain, pfam_type2.domain)  # CC间有共同的PF
             if sharing_domains is not None:  # 如果有共享的pfam
-                pf1_o = self.domains[pf_1]  # 索引两个domain对应的DomainType对象
-                pf2_o = self.domains[pf_2]
-                add_loci_1 = pf1_o.sharing_domain_loci(sharing_domains, sharing_lencov)
-                add_loci_2 = pf2_o.sharing_domain_loci(sharing_domains, sharing_lencov)
-                # 判断有重合的两个pf_type间是否满足长度阈值
-                self.related_edges.extend(product(add_loci_1, add_loci_2))
+                matching_protein_1 = pfam_type1.sharing_domain_loci(sharing_domains, sharing_lencov)
+                matching_protein_2 = pfam_type2.sharing_domain_loci(sharing_domains, sharing_lencov)
+                # 计算权重
+                weight = (matching_protein_1*matching_protein_2)/(len(pfam_type1.proteins)*len(pfam_type2.proteins))
+                edges_comb = tuple([pfam_type1.name, pfam_type2.name])
+                edges[edges_comb] = weight
+        self.connection = edges
 
     @staticmethod
     def sharing_domain(pf_type1, pf_type2):
         # 判断两个pf_type间是否有重合
-        domain_1 = pf_type1.split(';')
-        domain_2 = pf_type2.split(';')
-        sharing_domain = list(set(domain_1) & set(domain_2))
+        sharing_domain = list(set(pf_type1) & set(pf_type2))
         len_sharing_domain = len(sharing_domain)
         return sharing_domain if len_sharing_domain > 0 else None
 
-    def generate_final_graph(self, **kwargs):
-        basic_graph = igraph.Graph()
-        vs = self.genes
-        es = self.related_edges  # 获取相连的边
-        basic_graph.add_vertices(vs)
-        basic_graph.add_edges(es)
-        basic_graph.vs['pfam'] = kwargs['pfam']   # 给节点添加pfam的属性
-        return basic_graph
+    def generate_graph(self):  # 构建网路
+        domain_type_graph = igraph.Graph()
+        vs = self.domain_type
+        es = list(self.connection.keys())
+        weigth = list(self.connection.values())
+        domain_type_graph.add_vertices(vs)  # 添加点
+        domain_type_graph.vs['domain_type'] = [i.name for i in self.domain_type]  # 给点添加属性
+        es_index = [(domain_type_graph.vs.find(domain_type=edge[0]).index,
+                     domain_type_graph.vs.find(domain_type=edge[1]).index)
+                    for edge in es]  # 构建边的列表
+        domain_type_graph.add_edges(es_index)
+        domain_type_graph.es['weight'] = weigth   # 给节点添加pfam的属性
+        return domain_type_graph
+
+    def la_find_partition(self):
+        self.graph = self.generate_graph()
+        partition = la.find_partition(self.graph, partition_type=la.CPMVertexPartition,
+                                      weights='weight',
+                                      resolution_parameter=0.9)
+        return partition
+
+    def partition_p_og(self, partition, max_genome, out_dir):
+        result = ''
+        scc_num = 0
+        sum_p_og = 0
+        for community in partition:
+            community_subgraph = self.graph.subgraph(community)
+            mode_in_community = community_subgraph.vs['domain_type']
+            protein_lists = [node['name'].proteins for node in community_subgraph.vs]
+            genes_in_community = [protein.name for proteins in protein_lists for protein in proteins]
+            genomes_list = [n.split('|')[0] for n in genes_in_community]
+            genomes_set = set(genomes_list)  # 判断该community是否是核心
+            if len(genomes_set) >= max_genome:
+                p_OG = min(Counter(genomes_list).values())  # 获取每个PG的大小
+                sum_p_og += p_OG
+            else:
+                p_OG = 0
+            result += f'SCC{scc_num:0>7}\t{len(mode_in_community)}\t{len(genes_in_community)}\t{p_OG}\n'
+            scc_num += 1
+        message(text=f'Number of Communities:{scc_num+1}', label='Information')
+        message(text=f'Number of Potential_og:{sum_p_og}', label='Information')
+
+        with open(os.path.join(out_dir, 'partition_Potential_og.txt'), 'w') as f:
+            title = '#S_ID\tMode_num\tS_size\tPotential_og\n'
+            f.write(title)
+            f.write(result)
+        return partition

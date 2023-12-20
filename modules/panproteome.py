@@ -1,20 +1,21 @@
-import shutil
 import subprocess
-from collections import defaultdict, Counter
+import glob
+import os
+from collections import defaultdict
 from multiprocessing import Pool, Manager
 from pyfasta import Fasta
 from modules.build_graph import *
+from modules.utils import *
 from modules.pfam import *
-from modules.pfam_network import *
 
 # pfamDB = os.path.join(os.getcwd(), 'modules', 'Pfam-A.hmm')
-# pfamDB = '/media/disk2/biodatabases/Pfam/Pfam-A.hmm'
-pfamDB = '/home/biodbs/Pfam35.0/Pfam-A.hmm'
+pfamDB = '/media/disk2/biodatabases/Pfam/Pfam-A.hmm'
+# pfamDB = '/home/biodbs/Pfam35.0/Pfam-A.hmm'
 
 
 class Protein:
 
-    def __init__(self, name: str = "", sequence: str = "", domain: list = None):
+    def __init__(self, domain: list = [], name: str = "", sequence: str = ""):
         self.name = name
         self.sequence = sequence
         self.domain = domain
@@ -98,22 +99,20 @@ class Proteome(list):
         return
 
     def write_out_pfam(self, out_dir):  # self是一个faa文件
-        proteome_domain = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+        proteome_domain = defaultdict(lambda: defaultdict(list))
         for protein in self:  # 每个orf
             domain_list = protein.domain
             if domain_list:
-                combined = ";".join(sorted([d.id for d in domain_list]))
                 for domain_o in domain_list:
-                    proteome_domain[combined][protein.name]["Domain"].append(domain_o.id)
-                    proteome_domain[combined][protein.name]["LenCov"].append(domain_o.percent)
+                    proteome_domain[protein.name]["Domain"].append(domain_o.id)
+                    proteome_domain[protein.name]["LenCov"].append(domain_o.percent)
             else:
-                proteome_domain["None"][protein.name]["Domain"] = list()
-                proteome_domain["None"][protein.name]["LenCov"] = list()
+                proteome_domain[protein.name]["Domain"] = list()
+                proteome_domain[protein.name]["LenCov"] = list()
         FileOperator(f'{self.name}.pfam', out_dir, "json", proteome_domain).write()
 
 
 class Panproteome(list):
-    completed_file = "completed_proteomes.txt"
 
     def __init__(self, f):
         super().__init__()
@@ -124,22 +123,25 @@ class Panproteome(list):
     def _identify_pfam(self, threads, outdir):
 
         proteome: Proteome
-        try:
-            with open(self.completed_file, "r") as file:
-                completed_proteomes = file.read().splitlines()
-        except FileNotFoundError:
-            completed_proteomes = []
-
+        completed_proteomes = [os.path.splitext(os.path.basename(file))[0] for file in
+                      glob.glob(os.path.join(outdir, '*.pfam'))]
         for proteome in self:
             if proteome.name in completed_proteomes:
-                print(f"Proteome {proteome.name} already processed. Skipping...")
+                message(text=f"Proteome {proteome.name} already processed. Skipping...")
+                json_data = FileOperator(f'{proteome}.pfam', outdir, "json")
+                json_data.read()
+                for protein in proteome:
+                    protein: Protein
+                    domain_list = []
+                    for i in range(len(json_data.data[protein.name]['Domain'])):
+                        pfam_id = json_data.data[protein.name]['Domain'][i]
+                        percent = json_data.data[protein.name]['LenCov'][i]
+                        domain_list.append(Pfam(pfam_id=pfam_id, percent=percent))
+                    protein.domain = domain_list
             else:
                 message(text=f'identify Pfam for {proteome.name}')
                 proteome.search_pfam_domain(threads=threads)
                 proteome.write_out_pfam(out_dir=outdir)
-                # 将已完成的proteome_id记录到文件中
-                with open(self.completed_file, "a") as file:
-                    file.write(f"{proteome.name}\n")
 
     def make_sequences_info(self):
         # 获取蛋白质id及其对应的序列
@@ -151,51 +153,6 @@ class Panproteome(list):
                 SeqInfo[protein.name] = protein.sequence
         return SeqInfo
 
-    @staticmethod
-    def backup_completed_file():
-        if os.path.exists(Panproteome.completed_file):
-            shutil.copy(Panproteome.completed_file, "completed_backup.txt")
-            os.remove(Panproteome.completed_file)
-
     def put_pfam_file(self, threads, outdir):
         # 并行的运行hmmscan为每个proteome.faa鉴定pfam
         self._identify_pfam(threads=threads, outdir=outdir)
-
-    @staticmethod
-    def make_pfam_graph(ou_dir):
-        pfam = PGraph(ou_dir)   # 初始化
-        pfam.get_full_connected_edges()    # 生成全连通图
-        pfam.get_append_edges()  # 在不同连通图间添加边
-        basic_graph = pfam.get_full_connected_edges()
-        basic_graph.write_gml(os.path.join(ou_dir, 'pfam_graph.gml'))
-
-        pfams = pfam.node_attribute
-        simplify_pg = igraph.Graph()
-        pfam_vs = list(set(pfams))  # 从图中获取所有pfam_type
-        simplify_pg.add_vertices(pfam_vs)  # pfam_type作为节点添加
-        pfam_gene_dict = {value: [node["name"] for node in basic_graph.vs.select(pfam=value)]
-                          for value in pfam_vs}  # 存储相同pfam属性节点的gene列表
-        for v in simplify_pg.vs:  # 将gene列表作为属性添加到s_pg节点
-            pf = v["name"]
-            v["genes"] = pfam_gene_dict.get(pf, None)
-            if pf in pfam_gene_dict:
-                v["gene_num"] = len(pfam_gene_dict[pf])
-
-        s_edges_list = [tuple(sorted([basic_graph.vs[e.source]["pfam"], basic_graph.vs[e.target]["pfam"]]))
-                   for e in basic_graph.es]  # 获取simplify_pg的所有边
-        s_edges_dict = Counter(s_edges_list)  # 计算相同节点名称的边有几个
-        s_edges = list(set(s_edges_list))
-        s_weight_list = []  #获取权重
-        for i in s_edges:
-            pfam_1, pfam_2 = i
-            len_1 = len(simplify_pg.vs.find(name=pfam_1)['genes'])
-            len_2 = len(simplify_pg.vs.find(name=pfam_2)['genes'])
-            weight = (s_edges_dict[i]) / (len_1 * len_2)
-            s_weight_list.append(weight)
-        simplify_pg.add_edges(s_edges)
-        simplify_pg.es["weight"] = s_weight_list
-
-        simplify_pg.write_gml(os.path.join(ou_dir, 'simplify_pfam_graph.gml'))
-        simplify_pg.write_ncol(os.path.join(ou_dir, 'simplify_pfam_graph.txt'))
-
-        return simplify_pg
