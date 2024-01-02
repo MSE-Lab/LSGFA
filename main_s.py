@@ -6,9 +6,10 @@
 from optparse import OptionGroup, OptionParser
 from modules.homology_search import *
 from modules.panproteome import *
+from modules.DomainTree import *
 import leidenalg as la
 
-global OUT_DIR, DB_DIR, RES_DIR, QUERY_DIR, OG_DIR, THREADS, SEQ_INFO, INFLATION
+global OUT_DIR, PFAM_DIR, GRAPH_DIR, ALN_DIR, TREE_DIR, QUERY_DIR, OG_DIR, THREADS, SEQ_INFO, INFLATION
 
 
 def get_parameters():
@@ -55,52 +56,64 @@ def get_parameters():
 
 
 def make_working_dir():
-    global DB_DIR, RES_DIR, QUERY_DIR, OG_DIR
-    DB_DIR = os.path.join(OUT_DIR, 'db')
-    RES_DIR = os.path.join(OUT_DIR, 'res')
+    global PFAM_DIR, GRAPH_DIR, ALN_DIR, TREE_DIR, QUERY_DIR, OG_DIR
+    PFAM_DIR = os.path.join(OUT_DIR, 'pfam')
+    GRAPH_DIR = os.path.join(OUT_DIR, 'graph')
+    ALN_DIR = os.path.join(OUT_DIR, 'alignment')
+    TREE_DIR = os.path.join(OUT_DIR, 'tree')
     QUERY_DIR = os.path.join(OUT_DIR, 'query')
-    OG_DIR = os.path.join(OUT_DIR, 'Orthogroups')
-    [os.makedirs(dir_, exist_ok=True) for dir_ in [DB_DIR, RES_DIR, QUERY_DIR, OG_DIR]]
+    # OG_DIR = os.path.join(OUT_DIR, 'Orthogroups')
+    [os.makedirs(dir_, exist_ok=True) for dir_ in [PFAM_DIR, GRAPH_DIR, QUERY_DIR, ALN_DIR, TREE_DIR]]
 
 
 @time_used(f'[{timing()}]Pfam annotation')
 def pfam_annotation(input_genomes):
     pp = Panproteome(input_genomes)
     message(text=f'Start with PFAM annotation ...', label='PROCESS')
-    pp.put_pfam_file(threads=100, outdir=OUT_DIR)   # pfam注释
+    pp.put_pfam_file(threads=100, outdir=PFAM_DIR)   # pfam注释
     return pp
 
 
 @time_used(f'[{timing()}]Building pfam graph')
-def build_pfam_graph(pp, max_genome, out_dir):
+def build_pfam_graph(pp, max_genome):
     message(text=f'Start building the graph ...', label='PROCESS')
     pfam_graph = PGraph(pp)   # 初始化
     basic_graph = pfam_graph.generate_graph()
-    basic_graph.write_gml(os.path.join(out_dir, 'pfam_graph.gml'))
-    basic_graph.write_ncol(os.path.join(out_dir, 'pfam_graph.txt'), names='domain_type')
-    partition = pfam_graph.la_find_partition()   # 生成graph
+    basic_graph.write_gml(os.path.join(GRAPH_DIR, 'pfam_graph.gml'))
+    basic_graph.write_ncol(os.path.join(GRAPH_DIR, 'pfam_graph.txt'), names='domain_type')
+    partitions = pfam_graph.la_find_partition()   # 社区发现
     # pfam_graph.partition_p_og(partition, max_genome, out_dir)
-    return partition
+    return partitions
 
 
-@time_used(f'[{timing()}]Homology searching')
-def og_searching(p_graph):
-    db_cmds, search_cmds = p_graph.homology_search_commands(query_path=QUERY_DIR, db_path=DB_DIR,
-                                                            res_path=RES_DIR, seq_info=SEQ_INFO)
-    if None not in db_cmds:
-        db_cmds = CallCmd(cmd_list=db_cmds, process_info="Building homology searching database", parallel=True,
-                          threads=THREADS)
-        db_cmds.parallel_process()
-    search_cmd = CallCmd(search_cmds, process_info="Homology searching", parallel=True, threads=THREADS)
-    search_cmd.parallel_process()
+@time_used(f'[{timing()}]Building Domain Type Tree')
+def build_domain_tree(partitions, threads):
+    message(text=f'Start building Domain Type Tree ...', label='PROCESS')
+    trees = Trees(partitions)
+    trees.put_out_fasta(QUERY_DIR, threads)
+    print('put_out_fasta Done')
+    trees.alignment_tree(QUERY_DIR, ALN_DIR, threads)
+    trees.build_tree(ALN_DIR, TREE_DIR, threads)
 
 
-@time_used(f"[{timing()}]MCL")
-def running_mcl(p_graph):
-    abc_name = os.path.join(OUT_DIR, "mcl.abc")
-    out_name = os.path.join(OUT_DIR, "mcl.cluster.txt")
-    p_graph.mcl_abc(res_dir=RES_DIR, abc_file_name=abc_name, threads=THREADS, out_name=out_name,
-                    inflation=INFLATION)
+# @time_used(f'[{timing()}]Homology searching')
+# def og_searching(p_graph):
+#     db_cmds, search_cmds = p_graph.homology_search_commands(query_path=QUERY_DIR, db_path=DB_DIR,
+#                                                             res_path=RES_DIR, seq_info=SEQ_INFO)
+#     if None not in db_cmds:
+#         db_cmds = CallCmd(cmd_list=db_cmds, process_info="Building homology searching database", parallel=True,
+#                           threads=THREADS)
+#         db_cmds.parallel_process()
+#     search_cmd = CallCmd(search_cmds, process_info="Homology searching", parallel=True, threads=THREADS)
+#     search_cmd.parallel_process()
+
+
+# @time_used(f"[{timing()}]MCL")
+# def running_mcl(p_graph):
+#     abc_name = os.path.join(OUT_DIR, "mcl.abc")
+#     out_name = os.path.join(OUT_DIR, "mcl.cluster.txt")
+#     p_graph.mcl_abc(res_dir=RES_DIR, abc_file_name=abc_name, threads=THREADS, out_name=out_name,
+#                     inflation=INFLATION)
 
 
 @time_used(f"[{timing()}]Writing orthogroups")
@@ -144,13 +157,16 @@ def main():
     THREADS = parameters['search_threads']
     search_method = parameters['search_method']
     INFLATION = parameters['inflation_co']
-    # make_working_dir()
+    make_working_dir()
     max_genome = len([file for file in os.listdir(input_genomes_dir) if file.split(".")[-1] == 'faa'])
     message(text=f'genomes Numbers: {max_genome}', label='Information')
 
     # pfam graph construction
     pp = pfam_annotation(input_genomes_dir)
-    partition = build_pfam_graph(pp, max_genome, OUT_DIR)
+    partitions = build_pfam_graph(pp, max_genome)
+    # 每个partition画树
+    build_domain_tree(partitions, THREADS)
+
     # find_partition(s_pg, max_genome, OUT_DIR)
     # get_resolution_profile(s_pg, max_genome, os.path.join(OUT_DIR, 'resolution_profile.txt'))
 

@@ -42,8 +42,10 @@ class PGraph:
         self.connection = {}  # 用字典来保存connection属性，key是边的两个节点，value是权重
         self.graph = None  # 存储该PGraph的图
         domain_dict = {}
+        protein_num = 0
         for proteome in proteomes:
             for protein in proteome:  # 对protein重新分类，实例化DomainType
+                protein_num += 1
                 if sum([i.percent for i in protein.domain]) <= 0.6:
                     pfam_ = "None"
                 else:
@@ -55,6 +57,9 @@ class PGraph:
         for k, v in domain_dict.items():
             aDomainType = DomainType(name=k, proteins=v)
             self.domain_type.append(aDomainType)
+        message(text=f"Genes number: {protein_num}", label='Information')
+        message(text=f"None pfam genes number: {len(domain_dict['None'])}", label='Information')
+        message(text=f"DomainType number: {len(self.domain_type)}", label='Information')
         self._get_edges()  # 获取边的信息
 
     def get_domain_type(self):
@@ -98,12 +103,19 @@ class PGraph:
         domain_type_graph.es['weight'] = weigth   # 给节点添加pfam的属性
         return domain_type_graph
 
-    def la_find_partition(self):
+    def la_find_partition(self):  # 社区发现
         self.graph = self.generate_graph()
         partition = la.find_partition(self.graph, partition_type=la.CPMVertexPartition,
                                       weights='weight',
                                       resolution_parameter=0.9)
-        return partition
+        message(text=f"Partition number: {len(partition)}", label='Information')
+        partition_genes = []
+        for community in partition:  # 获取每个社区内的蛋白
+            community_subgraph = self.graph.subgraph(community)
+            protein_lists = [node['name'].proteins for node in community_subgraph.vs]
+            genes_in_community = [protein for proteins in protein_lists for protein in proteins]
+            partition_genes.append(genes_in_community)
+        return partition_genes
 
     def partition_p_og(self, partition, max_genome, out_dir):
         result = ''
@@ -130,4 +142,3 @@ class PGraph:
             title = '#S_ID\tMode_num\tS_size\tPotential_og\n'
             f.write(title)
             f.write(result)
-        return partition
