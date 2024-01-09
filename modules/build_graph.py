@@ -46,17 +46,18 @@ class PGraph:
         for proteome in proteomes:
             for protein in proteome:  # 对protein重新分类，实例化DomainType
                 protein_num += 1
-                if sum([i.percent for i in protein.domain]) <= 0.6:
+                if sum([i.percent for i in protein.domain]) <= 0.6:  # 在长度上判断
                     pfam_ = "None"
                 else:
                     pfam_ = ','.join(sorted([i.id for i in protein.domain]))
-                if pfam_ in domain_dict:
+                if pfam_ in domain_dict:  # 重新建立字典，重新分类
                     domain_dict[pfam_].append(protein)
                 else:
                     domain_dict[pfam_] = [protein]
-        for k, v in domain_dict.items():
-            aDomainType = DomainType(name=k, proteins=v)
-            self.domain_type.append(aDomainType)
+        for pfam_type, proteins in domain_dict.items():
+            if pfam_type != 'None':
+                aDomainType = DomainType(name=pfam_type, proteins=proteins)
+                self.domain_type.append(aDomainType)
         message(text=f"Genes number: {protein_num}", label='Information')
         message(text=f"None pfam genes number: {len(domain_dict['None'])}", label='Information')
         message(text=f"DomainType number: {len(self.domain_type)}", label='Information')
@@ -115,7 +116,7 @@ class PGraph:
             protein_lists = [node['name'].proteins for node in community_subgraph.vs]
             genes_in_community = [protein for proteins in protein_lists for protein in proteins]
             partition_genes.append(genes_in_community)
-        return partition_genes
+        return partition_genes  # 返回的是一个list of list，里面每个元素是一个社区内的所有节点
 
     def partition_p_og(self, partition, max_genome, out_dir):
         result = ''

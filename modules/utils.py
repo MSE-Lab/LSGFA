@@ -108,7 +108,7 @@ class CmdManger:
                 '-k0'])
         elif self.process == 'mmseqs':
             self.cmd = ' '.join([
-                'mmseqs', 'easy-search', query, db, out_name, '/temp', '--threads', 'self.thread', '-v', '1',
+                'mmseqs', 'easy-search', query, db, out_name, '/temp', '--threads', self.thread, '-v', '1',
                 '--format-mode', '0', '--remove-tmp-files', '-s', '7.5', '-e', '1e-5', ])
 
     def make_db(self, input_name, db):
@@ -121,6 +121,12 @@ class CmdManger:
         self.cmd = ' '.join(
             ['/media/disk4/conda_envs/UPhO/bin/mcl', abc_file, '--abc', '-I', inflation, '-o', out, '-te', self.thread,
              '-V -all'])
+
+    def clustalo_aln(self, fa_file, out_name):
+        self.cmd = ' '.join(['clustalo', '-i', fa_file, '-o', out_name])
+
+    def fasttree(self, aln_file, out_name):
+        self.cmd = ' '.join(['/opt/miniconda3/bin/fasttree', aln_file, '>', out_name])
 
 
 class CallCmd:

@@ -3,13 +3,17 @@
 # @Time    : 2023-07-11 17:27
 # @Author  : zhaoyu
 # @File    : main_s.py
+import os
 from optparse import OptionGroup, OptionParser
 from modules.homology_search import *
 from modules.panproteome import *
 from modules.DomainTree import *
+import modules.upho as upho
 import leidenalg as la
+import shutil
 
-global OUT_DIR, PFAM_DIR, GRAPH_DIR, ALN_DIR, TREE_DIR, QUERY_DIR, OG_DIR, THREADS, SEQ_INFO, INFLATION
+global OUT_DIR, PFAM_DIR, GRAPH_DIR, ALN_DIR, TREE_DIR, \
+    QUERY_DIR, OG_DIR, THREADS, SEQ_INFO, INFLATION
 
 
 def get_parameters():
@@ -26,6 +30,9 @@ def get_parameters():
     group0.add_option(
         '-x', '--extension', type=str, dest='extension', default='fna',
         help=f"Extension of genome files; default: fna")
+    group0.add_option(
+        '-f', '--force', type=str, dest='re_run', default=False,
+        help=f"Re-perform the homology search; default: False")
     group1.add_option(
         '-s', '--search_method', dest='search_method', choices=['diamond', 'mmseqs', 'blastp'], default='diamond',
         help='Homologs searching methods: blastp, mmseqs, diamond. Both mmseqs and diamond are sensitive mode ('
@@ -49,21 +56,32 @@ def get_parameters():
     e_values = options.e_values
     search_threads = options.search_threads
     inflation_co = options.inflation_co
+    re_run = options.re_run
     parameters_dict = dict(
         input_dir=input_dir, output_dir=output_dir, extension=extension, search_method=search_method, e_values=e_values,
-        search_threads=search_threads, inflation_co=inflation_co)
+        search_threads=search_threads, inflation_co=inflation_co, re_run=re_run)
     return parameters_dict
 
 
-def make_working_dir():
+def make_working_dir(re_run):
     global PFAM_DIR, GRAPH_DIR, ALN_DIR, TREE_DIR, QUERY_DIR, OG_DIR
     PFAM_DIR = os.path.join(OUT_DIR, 'pfam')
     GRAPH_DIR = os.path.join(OUT_DIR, 'graph')
     ALN_DIR = os.path.join(OUT_DIR, 'alignment')
     TREE_DIR = os.path.join(OUT_DIR, 'tree')
     QUERY_DIR = os.path.join(OUT_DIR, 'query')
-    # OG_DIR = os.path.join(OUT_DIR, 'Orthogroups')
-    [os.makedirs(dir_, exist_ok=True) for dir_ in [PFAM_DIR, GRAPH_DIR, QUERY_DIR, ALN_DIR, TREE_DIR]]
+    OG_DIR = os.path.join(OUT_DIR, 'orthogroups')
+    if re_run:
+        try:
+            shutil.rmtree(GRAPH_DIR)
+            shutil.rmtree(ALN_DIR)
+            shutil.rmtree(TREE_DIR)
+            shutil.rmtree(QUERY_DIR)
+            shutil.rmtree(OG_DIR)
+            os.remove(os.path.join(OUT_DIR, 'orthogroups.csv'))
+        except FileNotFoundError:
+            message(text='star re_run')
+    [os.makedirs(dir_, exist_ok=True) for dir_ in [PFAM_DIR, GRAPH_DIR, QUERY_DIR, ALN_DIR, TREE_DIR, OG_DIR]]
 
 
 @time_used(f'[{timing()}]Pfam annotation')
@@ -86,14 +104,37 @@ def build_pfam_graph(pp, max_genome):
     return partitions
 
 
+def upho_tree(input_dir, max_genome):
+    tree_file = glob.glob(os.path.join(TREE_DIR, '*.aln.tree'))
+    orthogroups_file = os.path.join(OUT_DIR, 'orthogroups.csv')
+    OrtList = open(orthogroups_file, 'a')
+    upho.upho_main(tree_file, max_genome, OrtList)
+    OrtList.close()
+    upho.No_OG_subsets(orthogroups_file)
+    upho.No_Same_OG_Intesec("OG_no_subsets.txt")
+    os.remove("OG_no_subsets.txt")
+    os.rename("OG_no_intersec.txt", "UPhO_nr_orthogroups.csv")
+    OrtList.close()
+
+    message(text="Proceeding to create a fasta file for each ortholog")
+    upho.gfr_main(query=orthogroups_file, outdir=OG_DIR, prefix='upho', input_path=input_dir)
+
+
 @time_used(f'[{timing()}]Building Domain Type Tree')
-def build_domain_tree(partitions, threads):
+def build_domain_tree(input_dir, partitions, threads, max_genome):
     message(text=f'Start building Domain Type Tree ...', label='PROCESS')
     trees = Trees(partitions)
-    trees.put_out_fasta(QUERY_DIR, threads)
-    print('put_out_fasta Done')
+    trees.put_out_fasta(QUERY_DIR)
+    message(text='Put_out_fasta Done.', label='PROCESS')
     trees.alignment_tree(QUERY_DIR, ALN_DIR, threads)
+    message(text='Alignment Done.', label='PROCESS')
     trees.build_tree(ALN_DIR, TREE_DIR, threads)
+    message(text='Build tree Done.', label='PROCESS')
+
+    trees.ana_newick(TREE_DIR, OUT_DIR, OG_DIR, max_genome)
+    message(text='ana_newick Done.', label='PROCESS')
+
+    # upho_tree(input_dir, max_genome)
 
 
 # @time_used(f'[{timing()}]Homology searching')
@@ -157,7 +198,8 @@ def main():
     THREADS = parameters['search_threads']
     search_method = parameters['search_method']
     INFLATION = parameters['inflation_co']
-    make_working_dir()
+    re_run = parameters['re_run']
+    make_working_dir(re_run)
     max_genome = len([file for file in os.listdir(input_genomes_dir) if file.split(".")[-1] == 'faa'])
     message(text=f'genomes Numbers: {max_genome}', label='Information')
 
@@ -165,22 +207,7 @@ def main():
     pp = pfam_annotation(input_genomes_dir)
     partitions = build_pfam_graph(pp, max_genome)
     # 每个partition画树
-    build_domain_tree(partitions, THREADS)
-
-    # find_partition(s_pg, max_genome, OUT_DIR)
-    # get_resolution_profile(s_pg, max_genome, os.path.join(OUT_DIR, 'resolution_profile.txt'))
-
-    # test_graph, SEQ_INFO = build_pfam_graph(input_genomes_dir)
-    # homology searching
-    # p_graph = PfamG(test_graph, method=search_method)
-    # og_searching(p_graph)
-    # mcl
-    # running_mcl(p_graph)
-    # writing OGs
-    # out_name = os.path.join(OUT_DIR, "mcl.cluster.txt")
-    # write_og_files(mcl_cluster_file=out_name, og_path=OG_DIR,
-    #                max_g=max_genome,
-    #                seq_info=SEQ_INFO)
+    build_domain_tree(input_genomes_dir, partitions, THREADS, max_genome)
 
 
 if __name__ == '__main__':
