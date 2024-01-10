@@ -110,14 +110,16 @@ def upho_tree(input_dir, max_genome):
     OrtList = open(orthogroups_file, 'a')
     upho.upho_main(tree_file, max_genome, OrtList)
     OrtList.close()
-    upho.No_OG_subsets(orthogroups_file)
-    upho.No_Same_OG_Intesec("OG_no_subsets.txt")
-    os.remove("OG_no_subsets.txt")
-    os.rename("OG_no_intersec.txt", "UPhO_nr_orthogroups.csv")
-    OrtList.close()
+
+    out_file = os.path.join(OUT_DIR, 'OG_no_subsets.txt')
+    upho.No_OG_subsets(orthogroups_file, out_file)
+
+    no_file = os.path.join(OUT_DIR, 'UPhO_nr_orthogroups.csv')
+    upho.No_Same_OG_Intesec(out_file, no_file)
+    os.remove(out_file)
 
     message(text="Proceeding to create a fasta file for each ortholog")
-    upho.gfr_main(query=orthogroups_file, outdir=OG_DIR, prefix='upho', input_path=input_dir)
+    upho.gfr_main(query=no_file, outdir=OG_DIR, prefix='upho', input_path=input_dir)
 
 
 @time_used(f'[{timing()}]Building Domain Type Tree')
@@ -131,10 +133,10 @@ def build_domain_tree(input_dir, partitions, threads, max_genome):
     trees.build_tree(ALN_DIR, TREE_DIR, threads)
     message(text='Build tree Done.', label='PROCESS')
 
-    trees.ana_newick(TREE_DIR, OUT_DIR, OG_DIR, max_genome)
-    message(text='ana_newick Done.', label='PROCESS')
+    # trees.ana_newick(TREE_DIR, OUT_DIR, OG_DIR, max_genome)
+    # message(text='ana_newick Done.', label='PROCESS')
 
-    # upho_tree(input_dir, max_genome)
+    upho_tree(input_dir, max_genome)
 
 
 # @time_used(f'[{timing()}]Homology searching')

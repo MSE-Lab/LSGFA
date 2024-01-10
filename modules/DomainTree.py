@@ -208,10 +208,10 @@ class Trees(list):  # 用于存放所有的DomainTree
             fasta_o.write()
 
     @staticmethod
-    def run_mafft(tree_name, fasta_dir, aln_dir):
+    def run_mafft(tree_name, fasta_dir, aln_dir, th):
         fasta_file = os.path.join(fasta_dir, f'{tree_name}.fa')
         aln_file = os.path.join(aln_dir, f'{tree_name}.aln')
-        mafft_cmd = ' '.join(['mafft', '--anysymbol', '--auto', '--quiet', fasta_file, '>', aln_file])
+        mafft_cmd = ' '.join(['mafft', '--anysymbol', '--auto', '--quiet', '--thread', str(th), fasta_file, '>', aln_file])
         cap = subprocess.Popen(mafft_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         cap.communicate()
         if cap.returncode != 0:
@@ -220,11 +220,19 @@ class Trees(list):  # 用于存放所有的DomainTree
 
     def alignment_tree(self, fasta_dir, aln_dir, threads):
         processes = Pool(processes=threads)
-        tree_names = [tree.name for tree in self if tree.gene_num > 3]
-        for name in tree_names:
-            processes.apply_async(self.run_mafft, args=(name, fasta_dir, aln_dir))
+        ls_name = []
+        m_name = []
+        for tree in self:
+            if tree.gene_num >= 3000 or 100 > tree.gene_num >3:
+                ls_name.append(tree.name)
+            if 3000 > tree.gene_num >= 100:
+                m_name.append(tree.name)
+        for name in ls_name:  # 大小的
+            processes.apply_async(Trees.run_mafft, args=(name, fasta_dir, aln_dir, 4))
         processes.close()
         processes.join()
+        for name in m_name:
+            Trees.run_mafft(name, fasta_dir, aln_dir, threads)
 
 
     @staticmethod
@@ -241,7 +249,7 @@ class Trees(list):  # 用于存放所有的DomainTree
         processes = Pool(processes=threads)
         aln_files = glob.glob(os.path.join(aln_dir, '*.aln'))
         for aln in aln_files:
-            processes.apply_async(self.run_fasttree, args=(aln, tree_dir))
+            processes.apply_async(Trees.run_fasttree, args=(aln, tree_dir))
         processes.close()
         processes.join()
 
