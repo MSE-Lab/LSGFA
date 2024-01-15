@@ -13,7 +13,7 @@ import leidenalg as la
 import shutil
 
 global OUT_DIR, PFAM_DIR, GRAPH_DIR, ALN_DIR, TREE_DIR, \
-    QUERY_DIR, OG_DIR, THREADS, SEQ_INFO, INFLATION
+    QUERY_DIR, OG_DIR, THREADS, SEQ_INFO, INFLATION, NO_PFAM
 
 
 def get_parameters():
@@ -64,13 +64,14 @@ def get_parameters():
 
 
 def make_working_dir(re_run):
-    global PFAM_DIR, GRAPH_DIR, ALN_DIR, TREE_DIR, QUERY_DIR, OG_DIR
+    global PFAM_DIR, GRAPH_DIR, ALN_DIR, TREE_DIR, QUERY_DIR, OG_DIR, NO_PFAM
     PFAM_DIR = os.path.join(OUT_DIR, 'pfam')
     GRAPH_DIR = os.path.join(OUT_DIR, 'graph')
     ALN_DIR = os.path.join(OUT_DIR, 'alignment')
     TREE_DIR = os.path.join(OUT_DIR, 'tree')
     QUERY_DIR = os.path.join(OUT_DIR, 'query')
     OG_DIR = os.path.join(OUT_DIR, 'orthogroups')
+    NO_PFAM = os.path.join(OUT_DIR, 'none_pfam')
     if re_run:
         try:
             shutil.rmtree(GRAPH_DIR)
@@ -78,10 +79,12 @@ def make_working_dir(re_run):
             shutil.rmtree(TREE_DIR)
             shutil.rmtree(QUERY_DIR)
             shutil.rmtree(OG_DIR)
+            shutil.rmtree(NO_PFAM)
             os.remove(os.path.join(OUT_DIR, 'orthogroups.csv'))
         except FileNotFoundError:
             message(text='star re_run')
-    [os.makedirs(dir_, exist_ok=True) for dir_ in [PFAM_DIR, GRAPH_DIR, QUERY_DIR, ALN_DIR, TREE_DIR, OG_DIR]]
+    [os.makedirs(dir_, exist_ok=True) for dir_ in [PFAM_DIR, GRAPH_DIR, QUERY_DIR, ALN_DIR,
+                                                   TREE_DIR, OG_DIR, NO_PFAM]]
 
 
 @time_used(f'[{timing()}]Pfam annotation')
@@ -93,9 +96,9 @@ def pfam_annotation(input_genomes):
 
 
 @time_used(f'[{timing()}]Building pfam graph')
-def build_pfam_graph(pp, max_genome):
+def build_pfam_graph(pp, max_genome):  # 处理有注释的部分
     message(text=f'Start building the graph ...', label='PROCESS')
-    pfam_graph = PGraph(pp)   # 初始化
+    pfam_graph = PGraph(pp, NO_PFAM)   # 初始化，提出none.fa的文件
     basic_graph = pfam_graph.generate_graph()
     basic_graph.write_gml(os.path.join(GRAPH_DIR, 'pfam_graph.gml'))
     basic_graph.write_ncol(os.path.join(GRAPH_DIR, 'pfam_graph.txt'), names='domain_type')
@@ -104,21 +107,21 @@ def build_pfam_graph(pp, max_genome):
     return partitions
 
 
-def upho_tree(input_dir, max_genome):
-    tree_file = glob.glob(os.path.join(TREE_DIR, '*.aln.tree'))
-    orthogroups_file = os.path.join(OUT_DIR, 'orthogroups.csv')
-    OrtList = open(orthogroups_file, 'a')
+def upho_tree(input_dir, max_genome, tree_dir):
+    tree_file = glob.glob(os.path.join(tree_dir, '*.aln.tree'))  # 读取tree文件
+    orthogroups_file = os.path.join(OUT_DIR, 'orthogroups.csv')  # 用于存储子树的内容
+    OrtList = open(orthogroups_file, 'a')  # 写入
     upho.upho_main(tree_file, max_genome, OrtList)
     OrtList.close()
 
-    out_file = os.path.join(OUT_DIR, 'OG_no_subsets.txt')
+    out_file = os.path.join(OUT_DIR, 'OG_no_subsets.txt')  # 去重复
     upho.No_OG_subsets(orthogroups_file, out_file)
 
-    no_file = os.path.join(OUT_DIR, 'UPhO_nr_orthogroups.csv')
+    no_file = os.path.join(OUT_DIR, 'UPhO_nr_orthogroups.csv')  # 去冗余和内部同源
     upho.No_Same_OG_Intesec(out_file, no_file)
     os.remove(out_file)
 
-    message(text="Proceeding to create a fasta file for each ortholog")
+    message(text="Proceeding to create a fasta file for each ortholog")  # 输出每个子树的fasta文件
     upho.gfr_main(query=no_file, outdir=OG_DIR, prefix='upho', input_path=input_dir)
 
 
@@ -133,31 +136,56 @@ def build_domain_tree(input_dir, partitions, threads, max_genome):
     trees.build_tree(ALN_DIR, TREE_DIR, threads)
     message(text='Build tree Done.', label='PROCESS')
 
+    # 这里是使用类中的内容（待修改
     # trees.ana_newick(TREE_DIR, OUT_DIR, OG_DIR, max_genome)
     # message(text='ana_newick Done.', label='PROCESS')
 
-    upho_tree(input_dir, max_genome)
+    # 这里是直接使用了upho的内容
+    upho_tree(input_dir, max_genome, TREE_DIR)
 
 
-# @time_used(f'[{timing()}]Homology searching')
-# def og_searching(p_graph):
-#     db_cmds, search_cmds = p_graph.homology_search_commands(query_path=QUERY_DIR, db_path=DB_DIR,
-#                                                             res_path=RES_DIR, seq_info=SEQ_INFO)
-#     if None not in db_cmds:
-#         db_cmds = CallCmd(cmd_list=db_cmds, process_info="Building homology searching database", parallel=True,
-#                           threads=THREADS)
-#         db_cmds.parallel_process()
-#     search_cmd = CallCmd(search_cmds, process_info="Homology searching", parallel=True, threads=THREADS)
-#     search_cmd.parallel_process()
+@time_used(f'[{timing()}]All to all blast for none_PFAM.')
+def aTa_blast(Ngroup):
+    blast_db = os.path.join(NO_PFAM, 'db')
+    os.makedirs(blast_db, exist_ok=True)
+    db_cmds, search_cmds = Ngroup.homology_search(query_dir=NO_PFAM, db_dir=blast_db,
+                                                  res_dir=NO_PFAM, threads=THREADS)
+    if None not in db_cmds:
+        db_cmds = CallCmd(cmd_list=db_cmds, process_info="Building database", threads=THREADS)
+        db_cmds.processing()
+    search_cmd = CallCmd(search_cmds, process_info="Homology searching", threads=THREADS)
+    search_cmd.processing()
+    Ngroup.build_homology_graph(os.path.join(NO_PFAM, 'none_pfam_blast.txt'))
+    none_partition = Ngroup.get_partition_genes()
+    return none_partition
 
+@time_used(f'[{timing()}]Building None_pfam Type Tree')
+def build_none_pfam_tree(search_method, threads, input_dir, max_genome):
+    # 处理None_pfam的部分
+    n_fa = os.path.join(NO_PFAM, 'none_pfam.fa')
+    n_pfam = Ngroup(n_fa, method=search_method)
+    none_partitions = aTa_blast(n_pfam)
 
-# @time_used(f"[{timing()}]MCL")
-# def running_mcl(p_graph):
-#     abc_name = os.path.join(OUT_DIR, "mcl.abc")
-#     out_name = os.path.join(OUT_DIR, "mcl.cluster.txt")
-#     p_graph.mcl_abc(res_dir=RES_DIR, abc_file_name=abc_name, threads=THREADS, out_name=out_name,
-#                     inflation=INFLATION)
+    message(text=f'Start building None_pfam Type Tree ...', label='PROCESS')
+    query_dir = os.path.join(NO_PFAM, 'none_qurey')
+    aln_dir = os.path.join(NO_PFAM, 'alignment')
+    tree_dir = os.path.join(NO_PFAM, 'tree')
+    [os.makedirs(dir_, exist_ok=True) for dir_ in [query_dir, aln_dir, tree_dir]]
 
+    trees = Trees(none_partitions, prefix='none_')
+    trees.put_out_fasta(query_dir)
+    message(text='Put_out_fasta Done.', label='PROCESS')
+    trees.alignment_tree(query_dir, aln_dir, threads)
+    message(text='Alignment Done.', label='PROCESS')
+    trees.build_tree(aln_dir, tree_dir, threads)
+    message(text='Build tree Done.', label='PROCESS')
+
+    # 这里是使用类中的内容（待修改
+    # trees.ana_newick(TREE_DIR, OUT_DIR, OG_DIR, max_genome)
+    # message(text='ana_newick Done.', label='PROCESS')
+
+    # 这里是直接使用了upho的内容
+    upho_tree(input_dir, max_genome, tree_dir)
 
 @time_used(f"[{timing()}]Writing orthogroups")
 def write_og_files(mcl_cluster_file, og_path, max_g, seq_info):
@@ -210,7 +238,9 @@ def main():
     partitions = build_pfam_graph(pp, max_genome)
     # 每个partition画树
     build_domain_tree(input_genomes_dir, partitions, THREADS, max_genome)
-
+    # 无pfam部分画树
+    build_none_pfam_tree(search_method=search_method, threads=THREADS,
+                         input_dir=input_genomes_dir, max_genome=max_genome)
 
 if __name__ == '__main__':
     main()

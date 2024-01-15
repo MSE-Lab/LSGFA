@@ -191,11 +191,11 @@ class DomainTree:
         return sub_dict
 
 class Trees(list):  # 用于存放所有的DomainTree
-    def __init__(self, partitions):
+    def __init__(self, partitions, prefix=''):
         super().__init__()
         tree_num = 0
         for community in partitions:
-            aDomainTree = DomainTree(f'tree{tree_num:0>7}', community)
+            aDomainTree = DomainTree(f'{prefix}tree{tree_num:0>7}', community)
             self.append(aDomainTree)  # 实例化
             tree_num += 1
         self.tree_num = tree_num
@@ -227,11 +227,11 @@ class Trees(list):  # 用于存放所有的DomainTree
                 ls_name.append(tree.name)
             if 3000 > tree.gene_num >= 100:
                 m_name.append(tree.name)
-        for name in ls_name:  # 大小的
+        for name in m_name:  # python的多任务并行
             processes.apply_async(Trees.run_mafft, args=(name, fasta_dir, aln_dir, 4))
         processes.close()
         processes.join()
-        for name in m_name:
+        for name in ls_name:  # mafft自己的并行
             Trees.run_mafft(name, fasta_dir, aln_dir, threads)
 
 
@@ -245,7 +245,8 @@ class Trees(list):  # 用于存放所有的DomainTree
             for e in cap.stderr:
                 print(e)
 
-    def build_tree(self, aln_dir, tree_dir, threads):
+    @staticmethod
+    def build_tree(aln_dir, tree_dir, threads):
         processes = Pool(processes=threads)
         aln_files = glob.glob(os.path.join(aln_dir, '*.aln'))
         for aln in aln_files:

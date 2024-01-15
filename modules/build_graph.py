@@ -36,7 +36,7 @@ class DomainType:
 
 
 class PGraph:
-    def __init__(self, proteomes: panproteome):
+    def __init__(self, proteomes: panproteome, none_dir):
         super(PGraph, self).__init__()
         self.domain_type = []  # 保存pfam_type属性
         self.connection = {}  # 用字典来保存connection属性，key是边的两个节点，value是权重
@@ -55,9 +55,14 @@ class PGraph:
                 else:
                     domain_dict[pfam_] = [protein]
         for pfam_type, proteins in domain_dict.items():
-            if pfam_type != 'None':
+            if pfam_type != 'None':  # 对于有注释的内容，建立图
                 aDomainType = DomainType(name=pfam_type, proteins=proteins)
                 self.domain_type.append(aDomainType)
+            else:  # 对于注释为None的部分，输出fasta文件
+                fasta = '\n'.join([f'>{pro_.name}\n{pro_.sequence}' for pro_ in proteins])
+                with open(os.path.join(none_dir, 'none_pfam.fa'), 'w') as f:
+                    f.write(fasta)
+
         message(text=f"Genes number: {protein_num}", label='Information')
         message(text=f"None pfam genes number: {len(domain_dict['None'])}", label='Information')
         message(text=f"DomainType number: {len(self.domain_type)}", label='Information')
@@ -117,29 +122,3 @@ class PGraph:
             genes_in_community = [protein for proteins in protein_lists for protein in proteins]
             partition_genes.append(genes_in_community)
         return partition_genes  # 返回的是一个list of list，里面每个元素是一个社区内的所有节点
-
-    def partition_p_og(self, partition, max_genome, out_dir):
-        result = ''
-        scc_num = 0
-        sum_p_og = 0
-        for community in partition:
-            community_subgraph = self.graph.subgraph(community)
-            mode_in_community = community_subgraph.vs['domain_type']
-            protein_lists = [node['name'].proteins for node in community_subgraph.vs]
-            genes_in_community = [protein.name for proteins in protein_lists for protein in proteins]
-            genomes_list = [n.split('|')[0] for n in genes_in_community]
-            genomes_set = set(genomes_list)  # 判断该community是否是核心
-            if len(genomes_set) >= max_genome:
-                p_OG = min(Counter(genomes_list).values())  # 获取每个PG的大小
-                sum_p_og += p_OG
-            else:
-                p_OG = 0
-            result += f'SCC{scc_num:0>7}\t{len(mode_in_community)}\t{len(genes_in_community)}\t{p_OG}\n'
-            scc_num += 1
-        message(text=f'Number of Communities:{scc_num+1}', label='Information')
-        message(text=f'Number of Potential_og:{sum_p_og}', label='Information')
-
-        with open(os.path.join(out_dir, 'partition_Potential_og.txt'), 'w') as f:
-            title = '#S_ID\tMode_num\tS_size\tPotential_og\n'
-            f.write(title)
-            f.write(result)
