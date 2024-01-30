@@ -1,19 +1,21 @@
-import os
+import subprocess
 import glob
+import os
+from collections import defaultdict
 from multiprocessing import Pool, Manager
-
 from pyfasta import Fasta
-
-from modules.pfam import *
-from modules.utils import *
 from modules.build_graph import *
+from modules.utils import *
+from modules.pfam import *
 
-pfamDB = os.path.join(os.getcwd(), 'modules', 'Pfam-A.hmm')
+# pfamDB = os.path.join(os.getcwd(), 'modules', 'Pfam-A.hmm')
+pfamDB = '/media/disk2/biodatabases/Pfam/Pfam-A.hmm'
+# pfamDB = '/home/biodbs/Pfam35.0/Pfam-A.hmm'
 
 
 class Protein:
 
-    def __init__(self, name: str = "", sequence: str = "", domain: list = None):
+    def __init__(self, domain: list = [], name: str = "", sequence: str = ""):
         self.name = name
         self.sequence = sequence
         self.domain = domain
@@ -23,8 +25,7 @@ class Protein:
 
     def _hmm_profile(self, scan_out):
         aHits = Hits(scan_out)
-        hits_clean = aHits.ana_relations()
-        self.domain = hits_clean
+        self.domain = aHits  # domain是很多pfam的组合
 
     def _hmm_scan(self, evalue='1e-5'):
         in_temp = make_temp_file(prefix='in_', close=False)
@@ -34,7 +35,7 @@ class Protein:
         cmd = ["hmmscan", "-E", evalue, "--domE", evalue, "--domtblout", out_temp.name, pfamDB, in_temp.name]
         # cmd2 = ['hmmscan', '--cut_ga', '--domtblout', out_temp.name, pfamDB, in_temp.name]
         cap = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        cap.wait()
+        cap.communicate()
         if cap.returncode != 0:
             # some errors happened
             for e in cap.stderr:
@@ -48,7 +49,7 @@ class Protein:
     def identify_pfam(self, queue, evalue='1e-5'):
         out_hmmscan = self._hmm_scan(evalue)
         os.unlink(out_hmmscan)
-        # 通过进程池 Protein.domain 似乎无法更新，所以吧结果put出来在进程池外再更新
+        # 通过进程池 Protein.domain 似乎无法更新，所以把结果put出来在进程池外再更新
         queue.put((self.name, self.domain))
 
 
@@ -66,10 +67,13 @@ class Proteome(list):
     def _read_fasta(self, fasta_name):
         fasta_file = Fasta(fasta_name)
         for seqid, seq in fasta_file.items():
+            seqid = seqid.split(" ")[0]  # 去除faa文件里的功能描述部分
             aProtein = Protein(name=seqid, sequence=seq)
             self.append(aProtein)
         self.name = os.path.basename(fasta_name).replace('.faa', '')
         self.size = len(self)
+        os.remove(f"{fasta_name}.flat")
+        os.remove(f"{fasta_name}.gdx")
 
     def search_pfam_domain(self, threads=60, evalue='1e-5'):
         """
@@ -94,6 +98,19 @@ class Proteome(list):
             protein.domain = identified_pfams[protein.name]
         return
 
+    def write_out_pfam(self, out_dir):  # self是一个faa文件
+        proteome_domain = defaultdict(lambda: defaultdict(list))
+        for protein in self:  # 每个orf
+            domain_list = protein.domain
+            if domain_list:
+                for domain_o in domain_list:
+                    proteome_domain[protein.name]["Domain"].append(domain_o.id)
+                    proteome_domain[protein.name]["LenCov"].append(domain_o.percent)
+            else:
+                proteome_domain[protein.name]["Domain"] = list()
+                proteome_domain[protein.name]["LenCov"] = list()
+        FileOperator(f'{self.name}.pfam', out_dir, "json", proteome_domain).write()
+
 
 class Panproteome(list):
 
@@ -103,33 +120,39 @@ class Panproteome(list):
             aProteome = Proteome(fasta_name=faa_file)
             self.append(aProteome)
 
-    def _identify_pfam(self, threads):
+    def _identify_pfam(self, threads, outdir):
+
         proteome: Proteome
+        completed_proteomes = [os.path.splitext(os.path.basename(file))[0] for file in
+                      glob.glob(os.path.join(outdir, '*.pfam'))]
         for proteome in self:
-            message(text=f'identify Pfam for {proteome.name}')
-            proteome.search_pfam_domain(threads=threads)
-
-    def _write_out_pfam(self, outdir):
-        for proteome in self:
-            with open(os.path.join(os.getcwd(), outdir, f'{proteome.name}.pfam'), 'w') as out:
+            if proteome.name in completed_proteomes:
+                message(text=f"Proteome {proteome.name} already processed. Skipping...")
+                json_data = FileOperator(f'{proteome}.pfam', outdir, "json")
+                json_data.read()
                 for protein in proteome:
-                    try:
-                        domains = ";".join([d.id for d in protein.domain])
-                    except TypeError:
-                        domains = 'None'
-                    out.write(f'{protein.name}\t{domains}\n')
+                    protein: Protein
+                    domain_list = []
+                    for i in range(len(json_data.data[protein.name]['Domain'])):
+                        pfam_id = json_data.data[protein.name]['Domain'][i]
+                        percent = json_data.data[protein.name]['LenCov'][i]
+                        domain_list.append(Pfam(pfam_id=pfam_id, percent=percent))
+                    protein.domain = domain_list
+            else:
+                message(text=f'identify Pfam for {proteome.name}')
+                proteome.search_pfam_domain(threads=threads)
+                proteome.write_out_pfam(out_dir=outdir)
 
-    def make_pfam_graph(self, threads, outdir):
+    def make_sequences_info(self):
+        # 获取蛋白质id及其对应的序列
+        SeqInfo = dict()
+        genome: Proteome
+        protein: Protein
+        for genome in self:
+            for protein in genome:
+                SeqInfo[protein.name] = protein.sequence
+        return SeqInfo
+
+    def put_pfam_file(self, threads, outdir):
         # 并行的运行hmmscan为每个proteome.faa鉴定pfam
-        # self._identify_pfam(threads=threads)
-        # 每一个proteome.faa的pfam鉴定结果都写在./testdata目录下了
-        # self._write_out_pfam(outdir=outdir)
-
-        members = glob.glob(os.path.join(os.getcwd(), outdir, '*.pfam'))
-        vs_es = get_edges(members)
-        vs = vs_es[0]
-        es = vs_es[1]
-
-        g = build_graph(vs, es)
-        partitions = graph_split(g)
-        return partitions
+        self._identify_pfam(threads=threads, outdir=outdir)

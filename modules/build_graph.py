@@ -1,56 +1,124 @@
+import warnings
 from itertools import combinations
-from igraph import Graph
+import igraph
+from modules import panproteome
 import leidenalg as la
+from collections import Counter
+from modules.utils import *
+
+warnings.filterwarnings("ignore")
 
 
-def get_edges(members):
-	# 用于获取点和边
+class DomainType:
+    # 用于存放Domain的类型
+    def __init__(self, proteins: list, name: str = ""):
+        self.name = name  # pfam_type
+        self.proteins = proteins  # 该pfam_type所包含的protein对象
+        self.domain = self._get_domains()
 
-	pf_dic = {}
-	orf_list = []
+    def __str__(self):
+        return self.name
 
-	for member in members:
-		with open(member) as f:
-			contents = f.readlines()
-		content_list = [content.split('\t') for content in contents]
+    # def __repr__(self):
+    #     return self.name
 
-		for i in range(len(content_list)):
-			orf = content_list[i][0]
-			orf_list.append(orf)
-			pf = list(set(content_list[i][1].rstrip().split(';')))
-			for j in pf:
-				if j != 'None':
-					if j not in pf_dic:
-						pf_dic[j] = [orf]
-					else:
-						pf_dic[j].append(orf)
+    def _get_domains(self):
+        return set(self.name.split(","))
 
-	edges_set = set()
-	for pfam in pf_dic.keys():
-		if len(pf_dic[pfam]) > 1:
-			edges_set = edges_set | set(combinations(sorted(pf_dic[pfam]), 2))
-		# 对pfam对应的orf列表组合，然后取并集，得到所有边的情况
-		# sorted后可以消除(a,b)和(b,a)不一致的情况
-	edges = list(edges_set)  # 边
-	vertices = list(set(orf_list))  # 点
-	return vertices, edges
+    def sharing_domain_loci(self, sharing_domain, domain_length_cov):
+        # 用于判断是否满足长度阈值
+        matching_protein = 0
+        for protein in self.proteins:  # overlap的pfam
+            domain_cov_sum = sum([pfam.percent for pfam in protein.domain if pfam.id in sharing_domain])
+            if domain_cov_sum >= domain_length_cov:
+                matching_protein += 1
+        return matching_protein
 
 
-def build_graph(orf_id, edges):
-	# 用于建立网络
-	g = Graph()
-	g.add_vertices(orf_id)
-	g.add_edges(list(edges))
-	g.write_graphml('OGGraph.graphml')
-	return g
+class PGraph:
+    def __init__(self, proteomes: panproteome, none_dir):
+        super(PGraph, self).__init__()
+        self.domain_type = []  # 保存pfam_type属性
+        self.connection = {}  # 用字典来保存connection属性，key是边的两个节点，value是权重
+        self.graph = None  # 存储该PGraph的图
+        domain_dict = {}
+        protein_num = 0
+        for proteome in proteomes:
+            for protein in proteome:  # 对protein重新分类，实例化DomainType
+                protein_num += 1
+                if sum([i.percent for i in protein.domain]) <= 0.6:  # 在长度上判断
+                    pfam_ = "None"
+                else:
+                    pfam_ = ','.join(sorted([i.id for i in protein.domain]))
+                if pfam_ in domain_dict:  # 重新建立字典，重新分类
+                    domain_dict[pfam_].append(protein)
+                else:
+                    domain_dict[pfam_] = [protein]
+        for pfam_type, proteins in domain_dict.items():
+            if pfam_type != 'None':  # 对于有注释的内容，建立图
+                aDomainType = DomainType(name=pfam_type, proteins=proteins)
+                self.domain_type.append(aDomainType)
+            else:  # 对于注释为None的部分，输出fasta文件
+                fasta = '\n'.join([f'>{pro_.name}\n{pro_.sequence}' for pro_ in proteins])
+                with open(os.path.join(none_dir, 'none_pfam.fa'), 'w') as f:
+                    f.write(fasta)
 
+        message(text=f"Genes number: {protein_num}", label='Information')
+        message(text=f"None pfam genes number: {len(domain_dict['None'])}", label='Information')
+        message(text=f"DomainType number: {len(self.domain_type)}", label='Information')
+        self._get_edges()  # 获取边的信息
 
-def graph_split(self):
-	# 对网络进行社区发现
+    def get_domain_type(self):
+        return list(i.name for i in self.domain_type)
 
-	partitions = la.find_partition(self, la.ModularityVertexPartition)
-	partitions_names = []
-	for cs in partitions:
-		partitions_names.append([self.vs[i]['name'] for i in cs])
-	print(partitions_names)
-	return partitions_names
+    def _compared_domain_component_pairwise(self):
+        domain_components = [k for k in self.domain_type if k.name != 'None']
+        return list(combinations(domain_components, 2))
+
+    def _get_edges(self, sharing_lencov=0.5):  # overlap的pfam占各自序列的0.5以上
+        edges = dict()
+        for pfam_type1, pfam_type2 in self._compared_domain_component_pairwise():  # 两个不同domain的CC的组合
+            sharing_domains = self.sharing_domain(pfam_type1.domain, pfam_type2.domain)  # CC间有共同的PF
+            if sharing_domains is not None:  # 如果有共享的pfam
+                matching_protein_1 = pfam_type1.sharing_domain_loci(sharing_domains, sharing_lencov)
+                matching_protein_2 = pfam_type2.sharing_domain_loci(sharing_domains, sharing_lencov)
+                # 计算权重
+                weight = (matching_protein_1*matching_protein_2)/(len(pfam_type1.proteins)*len(pfam_type2.proteins))
+                edges_comb = tuple([pfam_type1.name, pfam_type2.name])
+                edges[edges_comb] = weight
+        self.connection = edges
+
+    @staticmethod
+    def sharing_domain(pf_type1, pf_type2):
+        # 判断两个pf_type间是否有重合
+        sharing_domain = list(set(pf_type1) & set(pf_type2))
+        len_sharing_domain = len(sharing_domain)
+        return sharing_domain if len_sharing_domain > 0 else None
+
+    def generate_graph(self):  # 构建网路
+        domain_type_graph = igraph.Graph()
+        vs = self.domain_type
+        es = list(self.connection.keys())
+        weigth = list(self.connection.values())
+        domain_type_graph.add_vertices(vs)  # 添加点
+        domain_type_graph.vs['domain_type'] = [i.name for i in self.domain_type]  # 给点添加属性
+        es_index = [(domain_type_graph.vs.find(domain_type=edge[0]).index,
+                     domain_type_graph.vs.find(domain_type=edge[1]).index)
+                    for edge in es]  # 构建边的列表
+        domain_type_graph.add_edges(es_index)
+        domain_type_graph.es['weight'] = weigth   # 给节点添加pfam的属性
+        return domain_type_graph
+
+    def la_find_partition(self):  # 社区发现
+        self.graph = self.generate_graph()
+        partition = la.find_partition(self.graph, partition_type=la.CPMVertexPartition,
+                                      weights='weight',
+                                      resolution_parameter=0.9)
+        message(text=f"Partition number: {len(partition)}", label='Information')
+        partition_genes = []
+        for community in partition:  # 获取每个社区内的蛋白
+            community_subgraph = self.graph.subgraph(community)
+            protein_lists = [node['name'].proteins for node in community_subgraph.vs]
+            genes_in_community = [protein for proteins in protein_lists for protein in proteins]
+            partition_genes.append(genes_in_community)
+        return partition_genes  # 返回的是一个list of list，里面每个元素是一个社区内的所有节点
