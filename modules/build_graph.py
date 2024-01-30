@@ -54,17 +54,25 @@ class PGraph:
                     domain_dict[pfam_].append(protein)
                 else:
                     domain_dict[pfam_] = [protein]
+
+        diamon_num = 0
         for pfam_type, proteins in domain_dict.items():
-            if pfam_type != 'None':  # 对于有注释的内容，建立图
-                aDomainType = DomainType(name=pfam_type, proteins=proteins)
-                self.domain_type.append(aDomainType)
-            else:  # 对于注释为None的部分，输出fasta文件
+            if pfam_type == 'None':  # 对于注释为None的部分，输出fasta文件
                 fasta = '\n'.join([f'>{pro_.name}\n{pro_.sequence}' for pro_ in proteins])
                 with open(os.path.join(none_dir, 'none_pfam.fa'), 'w') as f:
                     f.write(fasta)
+            elif len(proteins) > 4000:
+                diamon_num += 1
+                fasta = '\n'.join([f'>{pro_.name}\n{pro_.sequence}' for pro_ in proteins])
+                with open(os.path.join(none_dir, f'd_{diamon_num}.fa'), 'w') as f:
+                    f.write(fasta)
+            else:  # 对于有注释的内容，建立图
+                aDomainType = DomainType(name=pfam_type, proteins=proteins)
+                self.domain_type.append(aDomainType)
 
         message(text=f"Genes number: {protein_num}", label='Information')
         message(text=f"None pfam genes number: {len(domain_dict['None'])}", label='Information')
+        message(text=f"CC number over 4000 genes: {diamon_num}", label='Information')
         message(text=f"DomainType number: {len(self.domain_type)}", label='Information')
         self._get_edges()  # 获取边的信息
 
@@ -100,7 +108,7 @@ class PGraph:
         vs = self.domain_type
         es = list(self.connection.keys())
         weigth = list(self.connection.values())
-        domain_type_graph.add_vertices(vs)  # 添加点
+        domain_type_graph.add_vertices(vs)  # 添加点，属性name是个DomainType的对象
         domain_type_graph.vs['domain_type'] = [i.name for i in self.domain_type]  # 给点添加属性
         es_index = [(domain_type_graph.vs.find(domain_type=edge[0]).index,
                      domain_type_graph.vs.find(domain_type=edge[1]).index)
@@ -108,6 +116,18 @@ class PGraph:
         domain_type_graph.add_edges(es_index)
         domain_type_graph.es['weight'] = weigth   # 给节点添加pfam的属性
         return domain_type_graph
+
+    @staticmethod
+    def put_graph_file(graph, graph_dir):
+        graph.write_gml(os.path.join(graph_dir, 'pfam_graph.gml'))
+        graph.write_ncol(os.path.join(graph_dir, 'pfam_graph.txt'), names='domain_type')
+        result = ''
+        for node in graph.vs:
+            name = node['domain_type']
+            protein_lists = ','.join([protein.name for protein in node['name'].proteins])
+            result += f'{name}\t{protein_lists}\n'
+        node_data = FileOperator('node_genes.txt', graph_dir, data=result)
+        node_data.write()
 
     def la_find_partition(self):  # 社区发现
         self.graph = self.generate_graph()

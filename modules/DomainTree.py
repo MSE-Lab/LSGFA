@@ -238,7 +238,8 @@ class Trees(list):  # 用于存放所有的DomainTree
     @staticmethod
     def run_fasttree(aln_file, tree_dir):
         tree_file = os.path.join(tree_dir, f'{os.path.basename(aln_file)}.tree')
-        fasttree_cmd = ' '.join(['/opt/miniconda3/bin/fasttree', aln_file, '>', tree_file])
+        fasttree_cmd = ' '.join(['fasttree', aln_file, '>', tree_file])
+        # fasttree_cmd = ' '.join(['/opt/miniconda3/bin/fasttree', aln_file, '>', tree_file])
         cap = subprocess.Popen(fasttree_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         cap.communicate()
         if cap.returncode != 0:
