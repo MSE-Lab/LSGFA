@@ -115,14 +115,14 @@ class PGraph:
                     for edge in es]  # 构建边的列表
         domain_type_graph.add_edges(es_index)
         domain_type_graph.es['weight'] = weigth   # 给节点添加pfam的属性
+        self.graph = domain_type_graph
         return domain_type_graph
 
-    @staticmethod
-    def put_graph_file(graph, graph_dir):
-        graph.write_gml(os.path.join(graph_dir, 'pfam_graph.gml'))
-        graph.write_ncol(os.path.join(graph_dir, 'pfam_graph.txt'), names='domain_type')
+    def put_graph_file(self, graph_dir):
+        self.graph.write_gml(os.path.join(graph_dir, 'pfam_graph.gml'))
+        self.graph.write_ncol(os.path.join(graph_dir, 'pfam_graph.txt'), names='domain_type')
         result = ''
-        for node in graph.vs:
+        for node in self.graph.vs:
             name = node['domain_type']
             protein_lists = ','.join([protein.name for protein in node['name'].proteins])
             result += f'{name}\t{protein_lists}\n'
@@ -130,7 +130,6 @@ class PGraph:
         node_data.write()
 
     def la_find_partition(self):  # 社区发现
-        self.graph = self.generate_graph()
         partition = la.find_partition(self.graph, partition_type=la.CPMVertexPartition,
                                       weights='weight',
                                       resolution_parameter=0.9)

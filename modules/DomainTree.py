@@ -10,6 +10,7 @@ from multiprocessing import Pool
 import re
 from math import fsum
 import glob
+from ete3 import Tree
 
 #GLOBAL VARIABLES. MODIFY IF NEEDED
 sep = '|'
@@ -30,6 +31,7 @@ class DomainTree:
         self.name = name  # 储存该树的编号
         self.proteins_list = proteins_list  # 存放蛋白对象
         self.gene_num = len(proteins_list)  # 记录有几个基因
+        self.index = None  # 用于存放cd-hit结果
         self.leaves = None
         self.newick = None
         self.splits = []  # 里面存放的是split的class
@@ -208,6 +210,18 @@ class Trees(list):  # 用于存放所有的DomainTree
             fasta_o.write()
 
     @staticmethod
+    def run_cd_hit(tree_name, fasta_dir, result_dir, thread):
+        # cd_hit的命令行
+        fasta_file = os.path.join(fasta_dir, f'{tree_name}.fa')
+        result_name = os.path.join(result_dir, f'{tree_name}.fa')
+        cd_hit_cmd = ' '.join(['cd-hit', '-i', fasta_file, '-o', result_name, '-c', '0.95', '-T', thread, '-d', '0'])  # -d 0 使用序列原名
+        cap = subprocess.Popen(cd_hit_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        cap.communicate()
+        if cap.returncode != 0:
+            for e in cap.stderr:
+                print(e)
+
+    @staticmethod
     def run_mafft(tree_name, fasta_dir, aln_dir, th):
         fasta_file = os.path.join(fasta_dir, f'{tree_name}.fa')
         aln_file = os.path.join(aln_dir, f'{tree_name}.aln')
@@ -218,7 +232,17 @@ class Trees(list):  # 用于存放所有的DomainTree
             for e in cap.stderr:
                 print(e)
 
-    def alignment_tree(self, fasta_dir, aln_dir, threads):
+    @staticmethod
+    def cd_hit(fasta_dir, cd_hit_dir, threads):
+        # 并行处理
+        processes = Pool(processes=threads)
+        fasta_files = glob.glob(os.path.join(fasta_dir, '*.fa'))
+        for fa in fasta_files:
+            processes.apply_async(Trees.run_cd_hit, args=(fa, cd_hit_dir))
+        processes.close()
+        processes.join()
+
+    def alignment_tree(self, cd_hit_dir, aln_dir, threads):
         processes = Pool(processes=threads)
         ls_name = []
         m_name = []
@@ -228,12 +252,11 @@ class Trees(list):  # 用于存放所有的DomainTree
             if 3000 > tree.gene_num >= 100:
                 m_name.append(tree.name)
         for name in m_name:  # python的多任务并行
-            processes.apply_async(Trees.run_mafft, args=(name, fasta_dir, aln_dir, 4))
+            processes.apply_async(Trees.run_mafft, args=(name, cd_hit_dir, aln_dir, 4))
         processes.close()
         processes.join()
         for name in ls_name:  # mafft自己的并行
-            Trees.run_mafft(name, fasta_dir, aln_dir, threads)
-
+            Trees.run_mafft(name, cd_hit_dir, aln_dir, threads)
 
     @staticmethod
     def run_fasttree(aln_file, tree_dir):
@@ -255,7 +278,42 @@ class Trees(list):  # 用于存放所有的DomainTree
         processes.close()
         processes.join()
 
-    def ana_newick(self, tree_dir, out_dir, og_dir, max_genome):
+    def get_index(self, cd_reslut_dir):
+        # 用于处理cd_hit的结果文件
+        for tree in self:
+            tree:DomainTree
+            index_file = os.path.join(cd_reslut_dir, f'{tree.name}.clstr')
+            with open(index_file, 'r') as f:
+                contents = f.read().split('>Cluster')[1:]
+            index_dic = dict()
+            for line in contents:
+                gene_list = re.findall(r'>\s*([^,\n]+)', line)
+                if len(gene_list) > 1:
+                    value = list()
+                    for gene in gene_list:
+                        if gene.endswith('*'):
+                            key = gene.split('...')[0]
+                            value.append(key)
+                        else:
+                            value.append(gene.split('...')[0])
+                    index_dic[key] = value
+            tree.index = index_dic  # 将检索信息储存在属性中
+
+    def edit_tree(self, tree_raw_dir, tree_dir):
+        for tree in self:
+            tree:DomainTree
+            raw_file = os.path.join(tree_raw_dir, f'{tree.name}.tree')
+            tree_file = os.path.join(tree_dir, f'{tree.name}.tree')
+            tree_raw = Tree(raw_file)
+            for key, values in tree.index.items():
+                tree_add = Tree()
+                for value in values:
+                    new_leaf = tree_add.add_child(name=value, dist=0)  # 构建该节点对应的子树
+                key_node = tree_raw.search_nodes(name=key)[0]
+                key_node.add_child(tree_add)
+            tree_raw.write(outfile=tree_file)
+
+    def ana_newick(self, tree_dir, out_dir, og_dir, max_genome):  # 这部分是调用类里的函数，暂时没有使用
         # 用于读取树和输出树
         ort_list = ''
         Total = 0
