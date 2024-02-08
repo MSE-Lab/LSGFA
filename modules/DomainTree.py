@@ -210,11 +210,10 @@ class Trees(list):  # 用于存放所有的DomainTree
             fasta_o.write()
 
     @staticmethod
-    def run_cd_hit(tree_name, fasta_dir, result_dir, thread):
+    def run_cd_hit(fasta_file, result_dir, thread):
         # cd_hit的命令行
-        fasta_file = os.path.join(fasta_dir, f'{tree_name}.fa')
-        result_name = os.path.join(result_dir, f'{tree_name}.fa')
-        cd_hit_cmd = ' '.join(['cd-hit', '-i', fasta_file, '-o', result_name, '-c', '0.95', '-T', thread, '-d', '0'])  # -d 0 使用序列原名
+        result_name = os.path.join(result_dir, f'{os.path.basename(fasta_file)}')
+        cd_hit_cmd = ' '.join(['cd-hit', '-i', fasta_file, '-o', result_name, '-c', '0.95', '-T', str(thread), '-d', '0'])
         cap = subprocess.Popen(cd_hit_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         cap.communicate()
         if cap.returncode != 0:
@@ -238,7 +237,7 @@ class Trees(list):  # 用于存放所有的DomainTree
         processes = Pool(processes=threads)
         fasta_files = glob.glob(os.path.join(fasta_dir, '*.fa'))
         for fa in fasta_files:
-            processes.apply_async(Trees.run_cd_hit, args=(fa, cd_hit_dir))
+            processes.apply_async(Trees.run_cd_hit, args=(fa, cd_hit_dir, 4))
         processes.close()
         processes.join()
 
@@ -247,7 +246,7 @@ class Trees(list):  # 用于存放所有的DomainTree
         ls_name = []
         m_name = []
         for tree in self:
-            if tree.gene_num >= 3000 or 100 > tree.gene_num >3:
+            if tree.gene_num >= 3000 or 100 > tree.gene_num:
                 ls_name.append(tree.name)
             if 3000 > tree.gene_num >= 100:
                 m_name.append(tree.name)
@@ -282,7 +281,7 @@ class Trees(list):  # 用于存放所有的DomainTree
         # 用于处理cd_hit的结果文件
         for tree in self:
             tree:DomainTree
-            index_file = os.path.join(cd_reslut_dir, f'{tree.name}.clstr')
+            index_file = os.path.join(cd_reslut_dir, f'{tree.name}.fa.clstr')
             with open(index_file, 'r') as f:
                 contents = f.read().split('>Cluster')[1:]
             index_dic = dict()
@@ -302,16 +301,17 @@ class Trees(list):  # 用于存放所有的DomainTree
     def edit_tree(self, tree_raw_dir, tree_dir):
         for tree in self:
             tree:DomainTree
-            raw_file = os.path.join(tree_raw_dir, f'{tree.name}.tree')
+            raw_file = os.path.join(tree_raw_dir, f'{tree.name}.aln.tree')
             tree_file = os.path.join(tree_dir, f'{tree.name}.tree')
             tree_raw = Tree(raw_file)
-            for key, values in tree.index.items():
-                tree_add = Tree()
-                for value in values:
-                    new_leaf = tree_add.add_child(name=value, dist=0)  # 构建该节点对应的子树
-                key_node = tree_raw.search_nodes(name=key)[0]
-                key_node.add_child(tree_add)
-            tree_raw.write(outfile=tree_file)
+            if tree.index != None:
+                for key, values in tree.index.items():
+                    tree_add = Tree()
+                    for value in values:
+                        new_leaf = tree_add.add_child(name=value, dist=0)  # 构建该节点对应的子树
+                    key_node = tree_raw.search_nodes(name=key)[0]
+                    key_node.add_child(tree_add)
+                tree_raw.write(outfile=tree_file)
 
     def ana_newick(self, tree_dir, out_dir, og_dir, max_genome):  # 这部分是调用类里的函数，暂时没有使用
         # 用于读取树和输出树

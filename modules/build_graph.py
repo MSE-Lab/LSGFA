@@ -139,5 +139,6 @@ class PGraph:
             community_subgraph = self.graph.subgraph(community)
             protein_lists = [node['name'].proteins for node in community_subgraph.vs]
             genes_in_community = [protein for proteins in protein_lists for protein in proteins]
-            partition_genes.append(genes_in_community)
+            if len(genes_in_community) > 3:
+                partition_genes.append(genes_in_community)
         return partition_genes  # 返回的是一个list of list，里面每个元素是一个社区内的所有节点

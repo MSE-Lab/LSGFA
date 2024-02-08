@@ -300,7 +300,7 @@ Get_fasta_from_Ref
 # Function definitions
 def Fasta_to_Dict(input_dir):
 	Records = {}
-	for file in glob.glob(os.path.join(input_dir, '*.faa')):
+	for file in glob.glob(os.path.join(input_dir, '*.fa')):
 		"""Creates a dictionary of FASTA sequences in a File, with seqIs as key to the sequences."""
 		with open(file, 'r') as F:
 			for Line in F:

@@ -64,5 +64,6 @@ class Ngroup:
 		for cc in self.graph.components():  # 获取每个社区内的蛋白
 			community_subgraph = self.graph.subgraph(cc)
 			genes_in_cc = [node['object'] for node in community_subgraph.vs]  # 获取cc内的蛋白对象
-			partition_genes.append(genes_in_cc)
+			if len(genes_in_cc) > 3:
+				partition_genes.append(genes_in_cc)
 		return list(partition_genes)  # 返回的是一个list of list，里面每个元素是一个社区内的所有节点

@@ -59,9 +59,12 @@ def get_parameters():
 
 
 def make_working_dir(re_run):
-    output_dirs = ['pfam', 'graph', 'alignment', 'tree_raw', 'tree',
+    output_dirs = ['graph', 'alignment', 'tree_raw', 'tree',
                    'cd_hit_result', 'query', 'orthogroups', 'none_pfam',
                    'none_pfam/fa_file']
+    # output_dirs = ['pfam', 'graph', 'alignment', 'tree_raw', 'tree',
+    #                'cd_hit_result', 'query', 'orthogroups', 'none_pfam',
+    #                'none_pfam/fa_file']
     if re_run:
         for dir_name in output_dirs:
             try:
@@ -72,11 +75,11 @@ def make_working_dir(re_run):
             os.remove(os.path.join(OUT_DIR, 'orthogroups.csv'))
         except FileNotFoundError:
             pass
-    [os.makedirs(dir_, exist_ok=True) for dir_ in output_dirs]
+    [os.makedirs(os.path.join(OUT_DIR, dir_), exist_ok=True) for dir_ in output_dirs]
 
 
 def upho_tree(input_dir, max_genome, tree_dir, og_dir):
-    tree_file = glob.glob(os.path.join(tree_dir, '*.aln.tree'))  # 读取tree文件
+    tree_file = glob.glob(os.path.join(tree_dir, '*.tree'))  # 读取tree文件
     orthogroups_file = os.path.join(OUT_DIR, 'orthogroups.csv')  # 用于存储子树的内容
     OrtList = open(orthogroups_file, 'a')  # 写入
     upho.upho_main(tree_file, max_genome, OrtList)
@@ -130,7 +133,7 @@ def main():
     og_dir = os.path.join(OUT_DIR, 'orthogroups')
     no_pfam = os.path.join(OUT_DIR, 'none_pfam')
     no_query = os.path.join(no_pfam, 'fa_file')
-    cd_hit_dir = os.path.join(no_pfam, 'cd_hit_result')
+    cd_hit_dir = os.path.join(OUT_DIR, 'cd_hit_result')
 
     make_working_dir(re_run)
     max_genome = len([file for file in os.listdir(input_genomes_dir) if file.split(".")[-1] == 'faa'])
@@ -145,12 +148,14 @@ def main():
     pfam_graph.generate_graph()  # 构建网络
     pfam_graph.put_graph_file(graph_dir)  # 输出网络相关文件
     partitions = pfam_graph.la_find_partition()  # 社区发现
+    print('len(partitions)_1', len(partitions))
     # blast后再画树的部分
-    message(text=f'Start building None_pfam Type Tree ...', label='PROCESS')
+    message(text=f'Start All To All Blast...', label='PROCESS')
     for fa_file in glob.glob(os.path.join(no_query, '*.fa')):  # 循环对需要blast的文件处理
         fa_blast = Ngroup(fa_file, method=search_method)
-        fa_partitions = aTa_blast(fa_blast, no_query)
+        fa_partitions = aTa_blast(fa_blast, no_query, no_pfam)
         partitions.extend(fa_partitions)
+    print('len(partitions)_2', len(partitions))
 
     # 画树
     message(text=f'Start building Domain Type Tree ...', label='PROCESS')
@@ -158,15 +163,18 @@ def main():
     trees.put_out_fasta(query_dir)
     message(text='Put_out_fasta Done.', label='PROCESS')
     # 在比对之前先去冗余
+    message(text='Start CD-hit.', label='PROCESS')
     trees.cd_hit(query_dir, cd_hit_dir, THREADS)
+    trees.get_index(cd_hit_dir)
+    message(text='CD-hit Done.', label='PROCESS')
     # 画树
-    trees.alignment_tree(query_dir, aln_dir, THREADS)
+    trees.alignment_tree(cd_hit_dir, aln_dir, THREADS)
     message(text='Alignment Done.', label='PROCESS')
     trees.build_tree(aln_dir, tree_raw_dir, THREADS)
     message(text='Build tree Done.', label='PROCESS')
     # 编辑树文件，添加叶子
     trees.edit_tree(tree_raw_dir, tree_dir)
-
+    message(text='Edit tree Done.', label='PROCESS')
     # upho拆分树
     upho_tree(query_dir, max_genome, tree_dir, og_dir)
     message(text='Analyse tree Done.', label='PROCESS')
