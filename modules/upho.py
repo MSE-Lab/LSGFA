@@ -154,13 +154,13 @@ def remove_ip(tree_list):
 	pat_ = tree_list[0]
 	gene_list = tree_list[1:]
 	sp_list = []
+	gene_list_new = []
 	for gene in gene_list:
 		sp = gene.split('|')[0]
-		if sp in sp_list:
-			gene_list.remove(gene)
-		else:
+		if sp not in sp_list:
+			gene_list_new.append(gene)
 			sp_list.append(sp)
-	return gene_list
+	return gene_list_new
 
 def No_Same_OG_Intesec(File, no_file):
 	Out = open(no_file, 'w')

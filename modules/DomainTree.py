@@ -10,7 +10,7 @@ from multiprocessing import Pool
 import re
 from math import fsum
 import glob
-from ete3 import Tree
+# from ete3 import Tree
 
 #GLOBAL VARIABLES. MODIFY IF NEEDED
 sep = '|'
@@ -197,7 +197,7 @@ class Trees(list):  # 用于存放所有的DomainTree
         super().__init__()
         tree_num = 0
         for community in partitions:
-            aDomainTree = DomainTree(f'{prefix}tree{tree_num:0>7}', community)
+            aDomainTree = DomainTree(f'{prefix}cc{tree_num:0>7}', community)
             self.append(aDomainTree)  # 实例化
             tree_num += 1
         self.tree_num = tree_num
