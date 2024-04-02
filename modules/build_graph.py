@@ -61,11 +61,6 @@ class PGraph:
                 fasta = '\n'.join([f'>{pro_.name}\n{pro_.sequence}' for pro_ in proteins])
                 with open(os.path.join(none_dir, 'none_pfam.fa'), 'w') as f:
                     f.write(fasta)
-            elif len(proteins) > 4000:
-                diamon_num += 1
-                fasta = '\n'.join([f'>{pro_.name}\n{pro_.sequence}' for pro_ in proteins])
-                with open(os.path.join(none_dir, f'd_{diamon_num}.fa'), 'w') as f:
-                    f.write(fasta)
             else:  # 对于有注释的内容，建立图
                 aDomainType = DomainType(name=pfam_type, proteins=proteins)
                 self.domain_type.append(aDomainType)
@@ -115,30 +110,55 @@ class PGraph:
                     for edge in es]  # 构建边的列表
         domain_type_graph.add_edges(es_index)
         domain_type_graph.es['weight'] = weigth   # 给节点添加pfam的属性
+        self.graph = domain_type_graph
         return domain_type_graph
 
-    @staticmethod
-    def put_graph_file(graph, graph_dir):
-        graph.write_gml(os.path.join(graph_dir, 'pfam_graph.gml'))
-        graph.write_ncol(os.path.join(graph_dir, 'pfam_graph.txt'), names='domain_type')
+    def put_graph_file(self, graph_dir):
+        self.graph.write_gml(os.path.join(graph_dir, 'pfam_graph.gml'))
+        self.graph.write_ncol(os.path.join(graph_dir, 'pfam_graph.txt'), names='domain_type')
         result = ''
-        for node in graph.vs:
+        for node in self.graph.vs:
             name = node['domain_type']
             protein_lists = ','.join([protein.name for protein in node['name'].proteins])
             result += f'{name}\t{protein_lists}\n'
         node_data = FileOperator('node_genes.txt', graph_dir, data=result)
         node_data.write()
 
-    def la_find_partition(self):  # 社区发现
-        self.graph = self.generate_graph()
+    def la_find_partition(self, out_dir):  # 社区发现
         partition = la.find_partition(self.graph, partition_type=la.CPMVertexPartition,
                                       weights='weight',
                                       resolution_parameter=0.9)
         message(text=f"Partition number: {len(partition)}", label='Information')
         partition_genes = []
+        result = ''
+        cc_num = 0
         for community in partition:  # 获取每个社区内的蛋白
             community_subgraph = self.graph.subgraph(community)
             protein_lists = [node['name'].proteins for node in community_subgraph.vs]
             genes_in_community = [protein for proteins in protein_lists for protein in proteins]
-            partition_genes.append(genes_in_community)
-        return partition_genes  # 返回的是一个list of list，里面每个元素是一个社区内的所有节点
+
+            cc_size = len(genes_in_community)
+            pattern_num = community_subgraph.vcount()
+            genomes = [protein.name.split('|')[0] for protein in genes_in_community]
+            genome_size = min(Counter(genomes).values())
+            genome_len = len(set(genomes))
+            if len(genes_in_community) > 3:
+                partition_genes.append(genes_in_community)
+                cc_id = f'cc{cc_num:0>7}'
+                result += f'{cc_id}\t{cc_size}\t{pattern_num}\t{genome_len}\t{genome_size}\n'
+                cc_num += 1
+            with open(os.path.join(out_dir, 'cc_infomation.txt'), 'w') as f_obj:
+                title = 'cc_id\tcc_size\tpattern_num\tgenome_len\tgenome_size\n'
+                f_obj.write(title)
+                f_obj.write(result)
+        # 返回的是一个list of list，里面每个元素是一个社区内的所有节点，节点是Protein的对象
+        return partition_genes
+
+    @staticmethod
+    def put_out_cc(partition_genes, out_dir):
+        cc_num = 0
+        for partition in partition_genes:
+            fasta = '\n'.join([f'>{protein.name}\n{protein.sequence}' for protein in partition])
+            fasta_o = FileOperator(name=f'cc{cc_num:0>7}.fa', dir_=out_dir, data=fasta)
+            fasta_o.write()
+            cc_num += 1

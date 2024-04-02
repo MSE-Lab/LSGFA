@@ -154,13 +154,13 @@ def remove_ip(tree_list):
 	pat_ = tree_list[0]
 	gene_list = tree_list[1:]
 	sp_list = []
+	gene_list_new = []
 	for gene in gene_list:
 		sp = gene.split('|')[0]
-		if sp in sp_list:
-			gene_list.remove(gene)
-		else:
+		if sp not in sp_list:
+			gene_list_new.append(gene)
 			sp_list.append(sp)
-	return gene_list
+	return gene_list_new
 
 def No_Same_OG_Intesec(File, no_file):
 	Out = open(no_file, 'w')
@@ -300,7 +300,7 @@ Get_fasta_from_Ref
 # Function definitions
 def Fasta_to_Dict(input_dir):
 	Records = {}
-	for file in glob.glob(os.path.join(input_dir, '*.faa')):
+	for file in glob.glob(os.path.join(input_dir, '*.fa')):
 		"""Creates a dictionary of FASTA sequences in a File, with seqIs as key to the sequences."""
 		with open(file, 'r') as F:
 			for Line in F:

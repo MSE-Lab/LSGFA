@@ -98,14 +98,14 @@ class CmdManger:
         self.cmd = cmd
         self.thread = str(thread)
 
-    def homology_searching(self, query, db, out_name):
+    def homology_searching(self, query, db, out_name, id):
         if self.process == 'blastp':
             self.cmd = ' '.join(['blastp', '-query', query, '-db', db, "-outfmt 6 -evalue 1e-5", "-out", out_name])
         elif self.process == 'diamond':
             self.cmd = ' '.join([
                 'diamond', 'blastp', '--more-sensitive', '-p', self.thread, '-q', query, '-d', '%s.dmnd' % db,
                 '--evalue 1e-5 -f 6', '--out', out_name, '--quiet', '--query-cover', '50', '--subject-cover', '50',
-                '-k', '0', '--id', '40'])
+                '-k', '0', '--id', id])
         elif self.process == 'mmseqs':
             self.cmd = ' '.join([
                 'mmseqs', 'easy-search', query, db, out_name, '/temp', '--threads', self.thread, '-v', '1',
