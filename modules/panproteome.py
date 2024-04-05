@@ -4,7 +4,6 @@ import os
 from collections import defaultdict
 from multiprocessing import Pool, Manager
 from pyfasta import Fasta
-from modules.build_graph import *
 from modules.utils import *
 from modules.pfam import *
 
@@ -14,6 +13,9 @@ pfamDB = '/media/disk2/biodatabases/Pfam/Pfam-A.hmm'  # 浪潮
 
 
 class Protein:
+    """
+    存放蛋白质序列
+    """
 
     def __init__(self, domain: list = [], name: str = "", sequence: str = ""):
         self.name = name
@@ -28,6 +30,10 @@ class Protein:
         self.domain = aHits  # domain是很多pfam的组合
 
     def _hmm_scan(self, evalue='1e-5'):
+        """
+        对每条蛋白序列使用hmmscan进行Pfam注释
+        :param evalue: evalue阈值
+        """
         in_temp = make_temp_file(prefix='in_', close=False)
         in_temp.write(f'>{self.name}\n{self.sequence}')
         in_temp.close()
@@ -54,6 +60,9 @@ class Protein:
 
 
 class Proteome(list):
+    """
+    存放1蛋白质组
+    """
 
     def __init__(self, fasta_name, name: str = None, size: int = None):
         super().__init__()
@@ -78,7 +87,6 @@ class Proteome(list):
     def search_pfam_domain(self, threads=60, evalue='1e-5'):
         """
         搜索Pfam-A.hmm
-        :return:
         """
         processes = Pool(processes=threads)
         aQueue = Manager().Queue()
@@ -113,6 +121,9 @@ class Proteome(list):
 
 
 class Panproteome(list):
+    """
+    存放泛基因组
+    """
 
     def __init__(self, f):
         super().__init__()
@@ -121,6 +132,12 @@ class Panproteome(list):
             self.append(aProteome)
 
     def _identify_pfam(self, threads, outdir):
+        """
+        对每个基因组进行Pfam的鉴定
+        存在鉴定结果的，读取鉴定结果，进行Protein实例化
+        :param threads: 线程
+        :param outdir: 输出目录
+        """
 
         proteome: Proteome
         completed_proteomes = [os.path.splitext(os.path.basename(file))[0] for file in
@@ -142,16 +159,6 @@ class Panproteome(list):
                 message(text=f'identify Pfam for {proteome.name}')
                 proteome.search_pfam_domain(threads=threads)
                 proteome.write_out_pfam(out_dir=outdir)
-
-    def make_sequences_info(self):
-        # 获取蛋白质id及其对应的序列
-        SeqInfo = dict()
-        genome: Proteome
-        protein: Protein
-        for genome in self:
-            for protein in genome:
-                SeqInfo[protein.name] = protein.sequence
-        return SeqInfo
 
     def put_pfam_file(self, threads, outdir):
         # 并行的运行hmmscan为每个proteome.faa鉴定pfam

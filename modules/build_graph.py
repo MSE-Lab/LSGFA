@@ -10,7 +10,9 @@ warnings.filterwarnings("ignore")
 
 
 class DomainType:
-    # 用于存放Domain的类型
+    """
+    每个DomainType表示一系列Pfam的组合，每种Domain包含多个protein
+    """
     def __init__(self, proteins: list, name: str = ""):
         self.name = name  # pfam_type
         self.proteins = proteins  # 该pfam_type所包含的protein对象
@@ -26,6 +28,13 @@ class DomainType:
         return set(self.name.split(","))
 
     def sharing_domain_loci(self, sharing_domain, domain_length_cov):
+        """
+        当两个蛋白的DomainType上有相同的pfam时，需要计算相同的这部分pfam占各自长度的百分比
+        只有超过阈值的才进行连边
+        :param sharing_domain:相同的pfam
+        :param domain_length_cov:设置的长度阈值
+        :return:符合标准的蛋白的个数
+        """
         # 用于判断是否满足长度阈值
         matching_protein = 0
         for protein in self.proteins:  # overlap的pfam
@@ -36,6 +45,13 @@ class DomainType:
 
 
 class PGraph:
+    """
+    根据Pfam的相似性进行图的构建
+    点是DomainType，当DomainType间有交叠时连边，边的权重是两个点间实际可连接的protein与理论应连接的比例
+    当一条protein上注释到Pfam的长度不足这条序列的60%时，则抛弃注释结果，判定为None
+    未注释到Pfam的蛋白输出为none_pfam.fa
+    注释到Pfam的蛋白实例化为DomainType的对象，用于图的构建
+    """
     def __init__(self, proteomes: panproteome, none_dir):
         super(PGraph, self).__init__()
         self.domain_type = []  # 保存pfam_type属性
@@ -67,7 +83,6 @@ class PGraph:
 
         message(text=f"Genes number: {protein_num}", label='Information')
         message(text=f"None pfam genes number: {len(domain_dict['None'])}", label='Information')
-        message(text=f"CC number over 4000 genes: {diamon_num}", label='Information')
         message(text=f"DomainType number: {len(self.domain_type)}", label='Information')
         self._get_edges()  # 获取边的信息
 
@@ -142,11 +157,11 @@ class PGraph:
             genomes = [protein.name.split('|')[0] for protein in genes_in_community]
             genome_size = min(Counter(genomes).values())
             genome_len = len(set(genomes))
-            if len(genes_in_community) > 3:
-                partition_genes.append(genes_in_community)
-                cc_id = f'cc{cc_num:0>7}'
-                result += f'{cc_id}\t{cc_size}\t{pattern_num}\t{genome_len}\t{genome_size}\n'
-                cc_num += 1
+            # if len(genes_in_community) > 3:
+            partition_genes.append(genes_in_community)
+            cc_id = f'cc{cc_num:0>7}'
+            result += f'{cc_id}\t{cc_size}\t{pattern_num}\t{genome_len}\t{genome_size}\n'
+            cc_num += 1
             with open(os.path.join(out_dir, 'cc_infomation.txt'), 'w') as f_obj:
                 title = 'cc_id\tcc_size\tpattern_num\tgenome_len\tgenome_size\n'
                 f_obj.write(title)
