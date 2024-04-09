@@ -84,13 +84,14 @@ def main():
         agroup.build_homology_graph(out_dir, not_output)  # 建立rbh
         message(text='Analyse Done.', label='PROCESS')
     else:  # 输入一个目录
-        faa_files = glob.glob(os.path.join(input_dir, '*.fa'))
+        faa_files = sorted(glob.glob(os.path.join(input_dir, '*.fa')))
         for faa in faa_files:
             agroup = DomainGroup(faa)
             agroup.homology_search(out_dir, threads, identity, coverage)  # blast
             agroup.handle_result(os.path.join(result_dir, f'{os.path.basename(agroup.name)}.txt'))  # 处理blast结果
             agroup.build_homology_graph(out_dir, not_output)  # 建立rbh
         message(text='Analyse Done.', label='PROCESS')
+
 
 if __name__ == '__main__':
     main()

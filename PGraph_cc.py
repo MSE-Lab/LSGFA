@@ -4,6 +4,7 @@
 # @Author  : zhaoyu
 # @File    : PGraph_cc.py
 from modules.panproteome import *
+from modules.build_graph import *
 import shutil
 import argparse
 

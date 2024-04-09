@@ -1,4 +1,7 @@
 class Pfam:
+    """
+    存放Pfam的鉴定结果
+    """
 
     def __init__(self, pfam_id, percent, pfam_name=None, start=None, end=None, hit_len=None):
         self.name = pfam_name
@@ -13,7 +16,10 @@ class Pfam:
 
 
 class Hits(list):
-    # 存放每条序列hit到的内容，每个元素是一个pfam的对象
+    """
+    存放每条序列hit到的内容
+    对hit进行筛选，保留不重叠的，长度最长的hit结果
+    """
 
     def __init__(self, hmmscan_out: str = ""):
         super().__init__()
@@ -23,6 +29,10 @@ class Hits(list):
         self.sum_percent()
 
     def _handle_raw(self, hmmscan_out):
+        """
+        处理每条蛋白序列hmmscan的结果
+        :param hmmscan_out: hmmscan的结果
+        """
         with open(hmmscan_out) as f:
             content = f.readlines()  # hits是一个list，存放读取未处理的内容
             hits = [i for i in content if not i.startswith("#")]
@@ -84,6 +94,9 @@ class Hits(list):
         self.raw = cleaned_list
 
     def sum_percent(self):
+        """
+        同一个会注释到多个结果，同一个Pfam需要计算他们在该条蛋白上的占比之和
+        """
         # 用于处理相同pfam的percent
         domains = {}
         for i in self.raw:

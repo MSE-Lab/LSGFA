@@ -8,8 +8,9 @@ from collections import Counter
 
 
 class DomainGroup:
-	# 用于存放每个cc的内容
-	# Ngroup是一个dict，里面存放的是gene_id:seq
+	"""
+	存放DomainType上具有相似性的聚类序列群，并在其中构建序列相似性网络
+	"""
 	def __init__(self, fasta_name, graph: Graph = None):
 		super().__init__()
 		self.content = dict()
@@ -48,6 +49,11 @@ class DomainGroup:
 		blast_cap.communicate()
 
 	def handle_result(self, result_file):
+		"""
+		处理blast的结果文件，找出每条序列在各个基因组内的双向最优匹配
+		:param result_file:blast的结果文件
+		:return:双向最优匹配的组合列表
+		"""
 		# 读取文件内
 		data = pd.read_csv(result_file, sep='\t', header=None,
 						   names=['query', 'subject', 'id', 'length', 'mismatch', 'gapopen',
@@ -68,6 +74,12 @@ class DomainGroup:
 		return rbh_list
 
 	def build_homology_graph(self, out_dir, cc_file):  # 构建rbh网络
+		"""
+		构建序列间的双向最优匹配网络
+		:param out_dir:输出目录
+		:param cc_file:输出名字
+		:return:子图列表
+		"""
 		vs_list = list(self.content.keys())
 		cc_graph = Graph()
 		cc_graph.add_vertices(vs_list)  # 添加点
