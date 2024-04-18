@@ -43,7 +43,7 @@ def get_parameters():
 
 
 def make_working_dir(out_dir, force):
-    output_dirs = ['blast', 'sub_cc']
+    output_dirs = ['blast', 'sub_cc', 'split_file']
     cc_list = os.path.join(out_dir, 'cc_list.txt')
     if force:
         for dir_name in output_dirs:
@@ -57,6 +57,21 @@ def make_working_dir(out_dir, force):
             pass
     # 重新创建目录
     [os.makedirs(os.path.join(out_dir, dir_), exist_ok=True) for dir_ in output_dirs]
+
+
+def work_flow(input_file, out_dir, threads, result_dir, identity, coverage, not_output):
+    result_files = []
+    agroup = DomainGroup(input_file)
+    agroup.make_db(out_dir, threads)  # make db
+    split_files = agroup.split_file(out_dir)
+    for split_file in split_files:
+        result_file = agroup.homology_search(split_file, result_dir, threads, identity, coverage)
+        result_files.append(result_file)
+    agroup.merge_files(os.path.join(result_dir, f'{agroup.name}.txt'), result_files)
+    for file in split_files + result_files:
+        os.remove(file)
+    agroup.handle_result(os.path.join(result_dir, f'{os.path.basename(agroup.name)}.txt'))  # 处理blast结果
+    agroup.build_homology_graph(out_dir, not_output)  # 建立rbh
 
 
 @time_used(f"[{timing()}]Whole processing Done")
@@ -76,20 +91,15 @@ def main():
 
     make_working_dir(out_dir, force)
     result_dir = os.path.join(out_dir, 'blast')
+    os.makedirs(result_dir, exist_ok=True)
 
     if input_file:  # 输入一个文件
-        agroup = DomainGroup(input_file)
-        agroup.homology_search(out_dir, threads, identity, coverage)  # blast
-        agroup.handle_result(os.path.join(result_dir, f'{os.path.basename(agroup.name)}.txt'))  # 处理blast结果
-        agroup.build_homology_graph(out_dir, not_output)  # 建立rbh
+        work_flow(input_file, out_dir, threads, result_dir, identity, coverage, not_output)
         message(text='Analyse Done.', label='PROCESS')
     else:  # 输入一个目录
         faa_files = sorted(glob.glob(os.path.join(input_dir, '*.fa')))
         for faa in faa_files:
-            agroup = DomainGroup(faa)
-            agroup.homology_search(out_dir, threads, identity, coverage)  # blast
-            agroup.handle_result(os.path.join(result_dir, f'{os.path.basename(agroup.name)}.txt'))  # 处理blast结果
-            agroup.build_homology_graph(out_dir, not_output)  # 建立rbh
+            work_flow(faa, out_dir, threads, result_dir, identity, coverage, not_output)
         message(text='Analyse Done.', label='PROCESS')
 
 

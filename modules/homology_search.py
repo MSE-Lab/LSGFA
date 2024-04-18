@@ -16,6 +16,7 @@ class DomainGroup:
 		self.content = dict()
 		self.file = fasta_name
 		self.name = os.path.basename(fasta_name).split('.')[0]
+		self.db = None
 		self.rbh = None
 		self.graph = graph
 		for gene_id, seq in Fasta(fasta_name).items():
@@ -26,27 +27,62 @@ class DomainGroup:
 	def __len__(self):
 		return len(self.content)
 
-	def homology_search(self, out_dir, threads, id='40', cover='50'):
+	def homology_search(self, input_file, blast_dir, threads, identity='40', cover='50'):
+		# 进行ata blast
+		res = os.path.join(blast_dir, f'result_{os.path.basename(input_file)}')  # 比较结果
+		# blast
+		message(text='Blast...', label='PROCESS')
+		blast_cmd = ' '.join([
+			'diamond', 'blastp', '--more-sensitive', '-p', threads, '-q', input_file, '-d', '%s.dmnd' % self.db,
+			'--evalue 1e-5 -f 6', '--out', res, '--quiet', '--query-cover', cover, '--subject-cover', cover,
+			'-k', '0', '--id', identity])
+		print(blast_cmd)
+		blast_cap = subprocess.Popen(blast_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+		blast_cap.communicate()
+		return res
+
+	def make_db(self, out_dir, threads):
 		# 进行ata blast
 		name = self.name  # 要进行比较的fa文件的名字
 		blast_dir = os.path.join(out_dir, 'blast')
 		os.makedirs(blast_dir, exist_ok=True)
 		db = os.path.join(blast_dir, name)  # db的位置
-		res = os.path.join(blast_dir, f'{name}.txt')  # 比较结果
+		self.db = db
 		# 建db
 		message(text='Make database...', label='PROCESS')
 		db_cmd = ' '.join(['diamond', 'makedb', '--in', self.file, '--db', db, '--threads', threads])
 		db_cap = subprocess.Popen(db_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
 		db_cap.communicate()
-		# blast
-		message(text='Blast...', label='PROCESS')
-		blast_cmd = ' '.join([
-			'diamond', 'blastp', '--more-sensitive', '-p', threads, '-q', self.file, '-d', '%s.dmnd' % db,
-			'--evalue 1e-5 -f 6', '--out', res, '--quiet', '--query-cover', cover, '--subject-cover', cover,
-			'-k', '0', '--id', id])
-		print(blast_cmd)
-		blast_cap = subprocess.Popen(blast_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-		blast_cap.communicate()
+
+	def split_file(self, out_dir):
+		result_files = []
+		gene_num = len(self.content.keys())
+		if gene_num <= 2000:  # 当序列数小于4000时不拆分
+			return [self.file]
+		else:
+			message(text='Split file...', label='PROCESS')
+			split_dir = os.path.join(out_dir, 'split_file')
+			os.makedirs(split_dir, exist_ok=True)
+			for i in range(0, gene_num, 500):
+				chunk = list(self.content.items())[i:i + 500]
+				output_file = f'{self.name}_part{i//500+1}.fa'
+				text_content = ''
+				for key, value in chunk:
+					text_content += f'>{key}\n{value}\n'
+				with open(os.path.join(split_dir, output_file), 'w') as f:
+					f.write(text_content)
+				result_files.append(os.path.join(split_dir, output_file))
+			message(text=f'There are {len(result_files)} split files...', label='Information:')
+			return result_files
+
+	# 合并结果文件
+	@staticmethod
+	def merge_files(output_file, result_files):
+		message(text='Merge split files...', label='PROCESS')
+		with open(output_file, 'w') as outfile:
+			for result_file in result_files:
+				with open(result_file, 'r') as infile:
+					outfile.write(infile.read())
 
 	def handle_result(self, result_file):
 		"""
@@ -55,9 +91,10 @@ class DomainGroup:
 		:return:双向最优匹配的组合列表
 		"""
 		# 读取文件内
+		message(text='Get RBH result...', label='PROCESS')
 		data = pd.read_csv(result_file, sep='\t', header=None,
-						   names=['query', 'subject', 'id', 'length', 'mismatch', 'gapopen',
-								  'qstart', 'qend', 'sstart', 'send', 'evalue', 'bitscore'])
+						names=['query', 'subject', 'id', 'length', 'mismatch', 'gapopen',
+								'qstart', 'qend', 'sstart', 'send', 'evalue', 'bitscore'])
 		# 提取基因组
 		data[['qgenome', 'sgenome']] = data[['query', 'subject']].map(lambda x: x.split('|')[0])
 		# filtered_data = data[data['qgenome'] != data['sgenome']]  # 过滤掉同组的内容
@@ -80,11 +117,12 @@ class DomainGroup:
 		:param cc_file:输出名字
 		:return:子图列表
 		"""
+		message(text='Build homology graph...', label='PROCESS')
 		vs_list = list(self.content.keys())
 		cc_graph = Graph()
 		cc_graph.add_vertices(vs_list)  # 添加点
 		cc_graph.add_edges(self.rbh)  # 添加边
-		cc_graph.write_gml(os.path.join(out_dir, f'{self.name}.gml'))
+		# cc_graph.write_gml(os.path.join(out_dir, f'{self.name}.gml'))
 
 		components_list = []  # 存放是sog的子图
 		components = cc_graph.components()  # 子图
