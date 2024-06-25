@@ -30,7 +30,7 @@ def get_parameters():
 
 
 def make_working_dir(re_run):
-    output_dirs = ['graph', 'query', 'none_pfam',
+    output_dirs = ['graph', 'query', 'none_pfam', 'pfam',
                    'none_pfam/fa_file']
     if re_run:  # 如果强制重做
         for dir_name in output_dirs:

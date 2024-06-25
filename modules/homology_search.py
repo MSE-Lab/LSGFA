@@ -33,8 +33,8 @@ class DomainGroup:
 		# blast
 		message(text='Blast...', label='PROCESS')
 		blast_cmd = ' '.join([
-			'diamond', 'blastp', '--more-sensitive', '-p', threads, '-q', input_file, '-d', '%s.dmnd' % self.db,
-			'--evalue 1e-5 -f 6', '--out', res, '--quiet', '--query-cover', cover, '--subject-cover', cover,
+			'diamond', 'blastp', '--more-sensitive', '-p', threads, '-q', input_file, '-d', self.db,
+			'--evalue 1e-5 -f 6', '--out', res, '--query-cover', cover, '--subject-cover', cover,
 			'-k', '0', '--id', identity])
 		print(blast_cmd)
 		blast_cap = subprocess.Popen(blast_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)

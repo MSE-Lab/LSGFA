@@ -68,8 +68,12 @@ def work_flow(input_file, out_dir, threads, result_dir, identity, coverage, not_
         result_file = agroup.homology_search(split_file, result_dir, threads, identity, coverage)
         result_files.append(result_file)
     agroup.merge_files(os.path.join(result_dir, f'{agroup.name}.txt'), result_files)
-    for file in split_files + result_files:
-        os.remove(file)
+    if len(split_files) == 1:
+        for file in result_files:
+            os.remove(file)
+    else:
+        for file in split_files + result_files:
+            os.remove(file)
     agroup.handle_result(os.path.join(result_dir, f'{os.path.basename(agroup.name)}.txt'))  # 处理blast结果
     agroup.build_homology_graph(out_dir, not_output)  # 建立rbh
 

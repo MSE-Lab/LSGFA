@@ -7,7 +7,7 @@ from pyfasta import Fasta
 from modules.utils import *
 from modules.pfam import *
 
-pfamDB = os.path.join(os.getcwd(), 'database', 'Pfam-A.hmm')
+pfamDB = os.path.join(os.getcwd(), 'modules', 'database', 'Pfam-A.hmm')
 # pfamDB = '/media/disk2/biodatabases/Pfam/Pfam-A.hmm'  # 浪潮
 # pfamDB = '/home/biodbs/Pfam35.0/Pfam-A.hmm'  # 集群
 
