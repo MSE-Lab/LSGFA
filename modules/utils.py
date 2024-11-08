@@ -48,13 +48,15 @@ def time_used(info=''):
     def timer(function):
         @functools.wraps(function)
         def wrapper(*args, **kwargs):
-            start = time.perf_counter() if sys.version[0] == '3' else time.clock()
+            start = time.perf_counter()  # 使用 perf_counter 获取高精度计时
             results = function(*args, **kwargs)
-            end = time.perf_counter() if sys.version[0] == '3' else time.clock()
+            end = time.perf_counter()
             time_use = end - start
-            print(
-                f'{info}: {time_use // 3600:.0f}h {(time_use % 3600) // 60:.0f}m {((time_use % 3600) % 60) % 60:.0f}s'
-            )
+            # 输出耗时，以秒为单位，保留小数点后两位
+            print(f'{info}: {time_use:.2f}s')
+            # print(
+            #     f'{info}: {time_use // 3600:.0f}h {(time_use % 3600) // 60:.0f}m {((time_use % 3600) % 60) % 60:.0f}s'
+            # )
             return results
         return wrapper
     return timer

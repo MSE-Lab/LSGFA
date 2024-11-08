@@ -36,7 +36,7 @@ def get_parameters():
         help='The coverage of homology search, default = 50.')
     parser.add_argument("-f", "--force", action="store_true",
                         help="Force to run by overwriting existing files")
-    parser.add_argument("--no-output", action="store_true",
+    parser.add_argument("--no_cc_output", action="store_true",
                         help="Do not output cc file")
     args = parser.parse_args()  # general options
     return args
@@ -57,6 +57,12 @@ def make_working_dir(out_dir, force):
             pass
     # 重新创建目录
     [os.makedirs(os.path.join(out_dir, dir_), exist_ok=True) for dir_ in output_dirs]
+
+def get_missing_query_files(blast_dir, query_dir):
+    blast_files = {os.path.splitext(file)[0] for file in os.listdir(blast_dir) if file.endswith('.txt')}
+    query_files = {os.path.splitext(file)[0] for file in os.listdir(query_dir) if file.endswith('.fa')}
+    missing_files = query_files - blast_files
+    return sorted([os.path.join(query_dir, file + '.fa') for file in missing_files])
 
 
 def work_flow(input_file, out_dir, threads, result_dir, identity, coverage, not_output):
@@ -101,7 +107,8 @@ def main():
         work_flow(input_file, out_dir, threads, result_dir, identity, coverage, not_output)
         message(text='Analyse Done.', label='PROCESS')
     else:  # 输入一个目录
-        faa_files = sorted(glob.glob(os.path.join(input_dir, '*.fa')))
+        faa_files = get_missing_query_files(result_dir, input_dir)
+        # faa_files = sorted(glob.glob(os.path.join(input_dir, '*.fa')))
         for faa in faa_files:
             work_flow(faa, out_dir, threads, result_dir, identity, coverage, not_output)
         message(text='Analyse Done.', label='PROCESS')

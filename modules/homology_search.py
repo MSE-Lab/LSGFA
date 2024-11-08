@@ -31,12 +31,11 @@ class DomainGroup:
 		# 进行ata blast
 		res = os.path.join(blast_dir, f'result_{os.path.basename(input_file)}')  # 比较结果
 		# blast
-		message(text='Blast...', label='PROCESS')
+		# message(text='Blast...', label='PROCESS')
 		blast_cmd = ' '.join([
 			'diamond', 'blastp', '--more-sensitive', '-p', threads, '-q', input_file, '-d', self.db,
 			'--evalue 1e-5 -f 6', '--out', res, '--query-cover', cover, '--subject-cover', cover,
 			'-k', '0', '--id', identity])
-		print(blast_cmd)
 		blast_cap = subprocess.Popen(blast_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
 		blast_cap.communicate()
 		return res
@@ -49,7 +48,7 @@ class DomainGroup:
 		db = os.path.join(blast_dir, name)  # db的位置
 		self.db = db
 		# 建db
-		message(text='Make database...', label='PROCESS')
+		# message(text='Make database...', label='PROCESS')
 		db_cmd = ' '.join(['diamond', 'makedb', '--in', self.file, '--db', db, '--threads', threads])
 		db_cap = subprocess.Popen(db_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
 		db_cap.communicate()
@@ -60,7 +59,7 @@ class DomainGroup:
 		if gene_num <= 2000:  # 当序列数小于4000时不拆分
 			return [self.file]
 		else:
-			message(text='Split file...', label='PROCESS')
+			# message(text='Split file...', label='PROCESS')
 			split_dir = os.path.join(out_dir, 'split_file')
 			os.makedirs(split_dir, exist_ok=True)
 			for i in range(0, gene_num, 500):
@@ -72,13 +71,13 @@ class DomainGroup:
 				with open(os.path.join(split_dir, output_file), 'w') as f:
 					f.write(text_content)
 				result_files.append(os.path.join(split_dir, output_file))
-			message(text=f'There are {len(result_files)} split files...', label='Information:')
+			# message(text=f'There are {len(result_files)} split files...', label='Information:')
 			return result_files
 
 	# 合并结果文件
 	@staticmethod
 	def merge_files(output_file, result_files):
-		message(text='Merge split files...', label='PROCESS')
+		# message(text='Merge split files...', label='PROCESS')
 		with open(output_file, 'w') as outfile:
 			for result_file in result_files:
 				with open(result_file, 'r') as infile:
@@ -91,7 +90,7 @@ class DomainGroup:
 		:return:双向最优匹配的组合列表
 		"""
 		# 读取文件内
-		message(text='Get RBH result...', label='PROCESS')
+		# message(text='Get RBH result...', label='PROCESS')
 		data = pd.read_csv(result_file, sep='\t', header=None,
 						names=['query', 'subject', 'id', 'length', 'mismatch', 'gapopen',
 								'qstart', 'qend', 'sstart', 'send', 'evalue', 'bitscore'])
@@ -117,7 +116,7 @@ class DomainGroup:
 		:param cc_file:输出名字
 		:return:子图列表
 		"""
-		message(text='Build homology graph...', label='PROCESS')
+		# message(text='Build homology graph...', label='PROCESS')
 		vs_list = list(self.content.keys())
 		cc_graph = Graph()
 		cc_graph.add_vertices(vs_list)  # 添加点
@@ -129,7 +128,7 @@ class DomainGroup:
 		for component in components:
 			subgraph = cc_graph.subgraph(component)
 			components_list.append(list(subgraph.vs['name']))
-		message(text=f'{len(components_list)} sub-Pfam were found.', label='Information')
+		# message(text=f'{len(components_list)} sub-Pfam were found.', label='Information')
 		self.put_file(components_list, out_dir, cc_file)  # 输出文件
 		return components_list
 
@@ -152,5 +151,5 @@ class DomainGroup:
 			protein_lists = ','.join(cc)
 			cc_result += f'{self.name}_{cc_}\n{protein_lists}\n'
 			cc_ += 1
-		with open(os.path.join(out_dir, 'cc_list.txt'), 'a') as f:
+		with open(os.path.join(out_dir, 'sub_cc_list.txt'), 'a') as f:
 			f.write(cc_result)
