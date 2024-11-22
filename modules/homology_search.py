@@ -3,7 +3,6 @@ import subprocess
 import pandas as pd
 from igraph import Graph
 from modules.utils import *
-from pyfasta import Fasta
 from collections import Counter
 
 
@@ -19,10 +18,8 @@ class DomainGroup:
 		self.db = None
 		self.rbh = None
 		self.graph = graph
-		for gene_id, seq in Fasta(fasta_name).items():
+		for gene_id, seq in gen_seqs_with_headers(fasta_name).items():
 			self.content[gene_id] = seq
-		os.remove(f"{fasta_name}.flat")
-		os.remove(f"{fasta_name}.gdx")
 
 	def __len__(self):
 		return len(self.content)
@@ -33,7 +30,7 @@ class DomainGroup:
 		# blast
 		# message(text='Blast...', label='PROCESS')
 		blast_cmd = ' '.join([
-			'diamond', 'blastp', '--more-sensitive', '-p', threads, '-q', input_file, '-d', self.db,
+			'diamond', 'blastp', '--more-sensitive', '-p', str(threads), '-q', input_file, '-d', self.db,
 			'--evalue 1e-5 -f 6', '--out', res, '--query-cover', cover, '--subject-cover', cover,
 			'-k', '0', '--id', identity])
 		blast_cap = subprocess.Popen(blast_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
@@ -43,13 +40,12 @@ class DomainGroup:
 	def make_db(self, out_dir, threads):
 		# 进行ata blast
 		name = self.name  # 要进行比较的fa文件的名字
-		blast_dir = os.path.join(out_dir, 'blast')
-		os.makedirs(blast_dir, exist_ok=True)
-		db = os.path.join(blast_dir, name)  # db的位置
+		os.makedirs(out_dir, exist_ok=True)
+		db = os.path.join(out_dir, name)  # db的位置
 		self.db = db
 		# 建db
 		# message(text='Make database...', label='PROCESS')
-		db_cmd = ' '.join(['diamond', 'makedb', '--in', self.file, '--db', db, '--threads', threads])
+		db_cmd = ' '.join(['diamond', 'makedb', '--in', self.file, '--db', db, '--threads', str(threads)])
 		db_cap = subprocess.Popen(db_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
 		db_cap.communicate()
 
@@ -83,14 +79,14 @@ class DomainGroup:
 				with open(result_file, 'r') as infile:
 					outfile.write(infile.read())
 
-	def handle_result(self, result_file):
+	def handle_result(self, result_file, tag: str):
 		"""
-		处理blast的结果文件，找出每条序列在各个基因组内的双向最优匹配
-		:param result_file:blast的结果文件
-		:return:双向最优匹配的组合列表
+		处理blast的结果文件
+		cc自己的blast结果取双向最优
+		none到cc的balst取单向最优，即none为query，cc_combine为subject
 		"""
 		# 读取文件内
-		# message(text='Get RBH result...', label='PROCESS')
+		rbh = []
 		data = pd.read_csv(result_file, sep='\t', header=None,
 						names=['query', 'subject', 'id', 'length', 'mismatch', 'gapopen',
 								'qstart', 'qend', 'sstart', 'send', 'evalue', 'bitscore'])
@@ -98,22 +94,26 @@ class DomainGroup:
 		data[['qgenome', 'sgenome']] = data[['query', 'subject']].map(lambda x: x.split('|')[0])
 		# filtered_data = data[data['qgenome'] != data['sgenome']]  # 过滤掉同组的内容
 		filtered_data = data[data['query'] != data['subject']]
-		# 排序后分组，然后去top1
-		result_list = filtered_data.sort_values(by=['id', 'evalue', 'bitscore'],
-												ascending=[False, True, True]).groupby(
-												['query', 'sgenome']).head(1)[['query', 'subject']]
 
-		result_list['pair'] = result_list.apply(lambda row: tuple(sorted([row['query'], row['subject']])), axis=1)
-		rbh_list = [key for key, value in Counter(result_list['pair']).items() if value == 2]
+		if tag == 'rbh':  # cc内部的
+			result_list = filtered_data.sort_values(by=['id', 'bitscore', 'evalue'],
+													ascending=[False, False, True]).groupby(
+				['query', 'sgenome']).head(1)[['query', 'subject']]
+			result_list['pair'] = result_list.apply(lambda row: tuple(sorted([row['query'], row['subject']])), axis=1)
+			rbh = [key for key, value in Counter(result_list['pair']).items() if value == 2]
+		elif tag == 'sbh':  # none去blast的
+			result_list = filtered_data.sort_values(by=['id', 'bitscore', 'evalue'],
+													ascending=[False, False, True]).groupby(
+				['query']).head(1)[['query', 'sgenome']]
+			rbh = result_list.groupby('sgenome')['query'].apply(list).to_dict()
 		# 存放双向最优的配对结果
-		self.rbh = rbh_list
-		return rbh_list
+		self.rbh = rbh
+		return
 
-	def build_homology_graph(self, out_dir, cc_file):  # 构建rbh网络
+	def build_homology_graph(self, out_dir):  # 构建rbh网络
 		"""
 		构建序列间的双向最优匹配网络
 		:param out_dir:输出目录
-		:param cc_file:输出名字
 		:return:子图列表
 		"""
 		# message(text='Build homology graph...', label='PROCESS')
@@ -129,27 +129,16 @@ class DomainGroup:
 			subgraph = cc_graph.subgraph(component)
 			components_list.append(list(subgraph.vs['name']))
 		# message(text=f'{len(components_list)} sub-Pfam were found.', label='Information')
-		self.put_file(components_list, out_dir, cc_file)  # 输出文件
-		return components_list
+		self.put_file(components_list, out_dir)  # 输出文件
+		return
 
-	def put_file(self, components_list, out_dir, cc_file=True):
-		if cc_file:  # 输出seq
-			cc_num = 1
-			subcc_dir = os.path.join(out_dir, 'sub_cc')
-			os.makedirs(subcc_dir, exist_ok=True)
-			for cc in components_list:
-				result = ''
-				for seq_id in cc:
-					result += f'>{seq_id}\n{self.content[seq_id]}\n'
-				cc_name = FileOperator(f'{self.name}_{cc_num}.faa', subcc_dir, data=result)
-				cc_name.write()
-				cc_num += 1
-		# 只输出gene_id不输出seq
-		cc_ = 1
-		cc_result = ''
+	def put_file(self, components_list, out_dir):
+		cc_num = 1
+		os.makedirs(out_dir, exist_ok=True)
 		for cc in components_list:
-			protein_lists = ','.join(cc)
-			cc_result += f'{self.name}_{cc_}\n{protein_lists}\n'
-			cc_ += 1
-		with open(os.path.join(out_dir, 'sub_cc_list.txt'), 'a') as f:
-			f.write(cc_result)
+			result = ''
+			for seq_id in cc:
+				result += f'>{seq_id}\n{self.content[seq_id]}\n'
+			cc_name = FileOperator(f'{self.name}_{cc_num}.faa', out_dir, data=result)
+			cc_name.write()
+			cc_num += 1

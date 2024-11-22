@@ -1,10 +1,8 @@
 import subprocess
 import glob
 import os
-import random
 from collections import defaultdict
 from multiprocessing import Pool, Manager
-from pyfasta import Fasta
 from modules.utils import *
 from modules.pfam import *
 from tqdm import tqdm
@@ -76,36 +74,40 @@ class Proteome(list):
         return self.name
 
     def _read_fasta(self, fasta_name):
-        fasta_file = Fasta(fasta_name)
+        fasta_file = gen_seqs_with_headers(fasta_name)
         for seqid, seq in fasta_file.items():
             seqid = seqid.split(" ")[0]  # 去除faa文件里的功能描述部分
             aProtein = Protein(name=seqid, sequence=seq)
             self.append(aProtein)
         self.name = os.path.basename(fasta_name).replace('.faa', '')
         self.size = len(self)
-        os.remove(f"{fasta_name}.flat")
-        os.remove(f"{fasta_name}.gdx")
+        # os.remove(f"{fasta_name}.flat")
+        # os.remove(f"{fasta_name}.gdx")
 
     def search_pfam_domain(self, threads=60, evalue='1e-5'):
         """
         搜索Pfam-A.hmm
         """
-        processes = Pool(processes=threads)
         aQueue = Manager().Queue()
+        # 限制最大进程数，并使用 with 确保资源释放
+        with Pool(processes=threads) as processes:
+            for protein in self:
+                processes.apply_async(protein.identify_pfam, args=(aQueue, evalue))
+            identified_pfams = dict()
+            ntd = 0
+            while True:
+                try:
+                    a = aQueue.get(timeout=None)  # 阻塞等待直到有结果可用
+                    identified_pfams[a[0]] = a[1]
+                    ntd += 1
+                    if ntd == self.size:  # 当获取到的结果数量等于蛋白质序列数量时停止
+                        break
+                except Exception as e:
+                    print(f"Error retrieving from queue: {e}")
+                    break
+        # 将识别出的Pfam域分配给对应的蛋白质对象
         for protein in self:
-            processes.apply_async(protein.identify_pfam, args=(aQueue, evalue))
-        processes.close()
-        identified_pfams = dict()
-        ntd = 0
-        while True:
-            a = aQueue.get(timeout=None)
-            identified_pfams[a[0]] = a[1]
-            ntd += 1
-            if ntd == self.size:
-                # 当从进程池队列中get的结果数量等于Proteome的size，即蛋白质序列数量时停止get结果
-                break
-        for protein in self:
-            protein.domain = identified_pfams[protein.name]
+            protein.domain = identified_pfams.get(protein.name, None)  # 使用 get 避免 KeyError
         return
 
     def write_out_pfam(self, out_dir):  # self是一个faa文件
@@ -190,5 +192,5 @@ class Panproteome(list):
             represent = sorted_group[0]
             unique_proteomes.append(represent)
             redundancy_string += f"* {represent.name}\n" + ' '.join([i.name for i in group]) + '\n'
-        FileOperator('redundancy_infomation.txt', dir_ = outdir, data=redundancy_string).write()
+        FileOperator('redundancy_infomation.txt', dir_=outdir, data=redundancy_string).write()
         return unique_proteomes

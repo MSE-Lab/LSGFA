@@ -179,3 +179,26 @@ class CallCmd:
         self.manager_queue(queue)
         pool.close()
         pool.join()
+
+
+def gen_seqs_with_headers(fn):
+    with open(fn) as f:
+        fh = f.readlines()
+    header = None
+    seqs = []
+    gene_seqs = dict()
+
+    for line in fh:
+        line = line.strip()
+        if line.startswith('>'):
+            if header is not None:
+                gene_seqs[header] = "".join(seqs)
+            header = line[1:]
+            seqs = []
+        else:
+            seqs.append(line)
+        # 保存最后一个读取到的序列
+    if seqs and header is not None:
+        gene_seqs[header] = "".join(seqs)
+
+    return gene_seqs
