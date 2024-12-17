@@ -57,6 +57,7 @@ class PGraph:
         self.domain_type = []  # 保存pfam_type属性
         self.connection = {}  # 用字典来保存connection属性，key是边的两个节点，value是权重
         self.graph = None  # 存储该PGraph的图
+        self.genomes_num = len(proteomes)
         domain_dict = {}
         protein_num = 0
         for proteome in proteomes:
@@ -172,6 +173,7 @@ class PGraph:
         # self.put_out_cc(partition_genes, query_dir)
         # 输出cc的信息
         with open(os.path.join(graph_dir, 'cc_infomation.txt'), 'w') as f_obj:
+            f_obj.write(f'genomes number: {self.genomes_num}\n')
             title = 'cc_id\tcc_size\tpattern_num\tgenome_len\tgenome_size\n'
             f_obj.write(title)
             f_obj.write(result)

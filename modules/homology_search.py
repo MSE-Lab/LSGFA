@@ -1,4 +1,5 @@
 import os
+import gc
 import subprocess
 import pandas as pd
 from igraph import Graph
@@ -12,27 +13,32 @@ class DomainGroup:
 	"""
 	def __init__(self, fasta_name, graph: Graph = None):
 		super().__init__()
-		self.content = dict()
+		self.content = gen_seqs_with_headers(fasta_name)
 		self.file = fasta_name
 		self.name = os.path.basename(fasta_name).split('.')[0]
 		self.db = None
 		self.rbh = None
 		self.graph = graph
-		for gene_id, seq in gen_seqs_with_headers(fasta_name).items():
-			self.content[gene_id] = seq
 
 	def __len__(self):
 		return len(self.content)
 
-	def homology_search(self, input_file, blast_dir, threads, identity='40', cover='50'):
-		# 进行ata blast
-		res = os.path.join(blast_dir, f'result_{os.path.basename(input_file)}')  # 比较结果
-		# blast
-		# message(text='Blast...', label='PROCESS')
-		blast_cmd = ' '.join([
-			'diamond', 'blastp', '--more-sensitive', '-p', str(threads), '-q', input_file, '-d', self.db,
-			'--evalue 1e-5 -f 6', '--out', res, '--query-cover', cover, '--subject-cover', cover,
-			'-k', '0', '--id', identity])
+	def homology_search(self, input_file, blast_dir, threads, method, num, identity=40, cover=50):
+		blast_cmd = ''
+		res = ''
+		if method == 'diamond':
+			# 进行ata blast
+			res = os.path.join(blast_dir, f'result_{os.path.basename(input_file)}')  # 比较结果
+			blast_cmd = ' '.join([
+				'diamond', 'blastp', '--more-sensitive', '-p', str(threads), '-q', input_file, '-d', self.db,
+				'--evalue 1e-5 -f 6', '--out', res, '--query-cover', str(cover), '--subject-cover', str(cover),
+				'-k', '0', '--id', str(identity)])
+		elif method == 'mmseqs-search':
+			res = os.path.join(blast_dir, f'{self.name}.txt')
+			blast_cmd = ' '.join([
+				'mmseqs', 'easy-search', input_file, self.file, res, os.path.join(blast_dir, f'tmp_{self.name}'),
+				'-s', '7.5', '-e', '1.000E-05', '--threads', str(threads), '--max-seqs', str(num),
+				'--min-seq-id', str(int(identity)/100), '-c', str(int(cover)/100)])
 		blast_cap = subprocess.Popen(blast_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
 		blast_cap.communicate()
 		return res
@@ -74,10 +80,14 @@ class DomainGroup:
 	@staticmethod
 	def merge_files(output_file, result_files):
 		# message(text='Merge split files...', label='PROCESS')
-		with open(output_file, 'w') as outfile:
-			for result_file in result_files:
-				with open(result_file, 'r') as infile:
-					outfile.write(infile.read())
+		if len(result_files) == 1:
+			os.rename(result_files[0], output_file)
+		else:
+			with open(output_file, 'w') as outfile:
+				for result_file in result_files:
+					with open(result_file, 'r') as infile:
+						outfile.write(infile.read())
+		return output_file
 
 	def handle_result(self, result_file, tag: str):
 		"""
@@ -86,29 +96,45 @@ class DomainGroup:
 		none到cc的balst取单向最优，即none为query，cc_combine为subject
 		"""
 		# 读取文件内
-		rbh = []
+		rbh = None
+		# 仅读取以下列名的内容
+		necessary_columns = ['query', 'subject', 'id', 'evalue', 'bitscore']
 		data = pd.read_csv(result_file, sep='\t', header=None,
-						names=['query', 'subject', 'id', 'length', 'mismatch', 'gapopen',
-								'qstart', 'qend', 'sstart', 'send', 'evalue', 'bitscore'])
+						names=['query', 'subject', 'id', 'length', 'mismatch',
+								'gapopen', 'qstart', 'qend', 'sstart',
+								'send', 'evalue', 'bitscore'],
+						usecols=necessary_columns)
 		# 提取基因组
 		data[['qgenome', 'sgenome']] = data[['query', 'subject']].map(lambda x: x.split('|')[0])
 		# filtered_data = data[data['qgenome'] != data['sgenome']]  # 过滤掉同组的内容
 		filtered_data = data[data['query'] != data['subject']]
+		del data
 
 		if tag == 'rbh':  # cc内部的
-			result_list = filtered_data.sort_values(by=['id', 'bitscore', 'evalue'],
-													ascending=[False, False, True]).groupby(
-				['query', 'sgenome']).head(1)[['query', 'subject']]
+			# result_list = filtered_data.sort_values(by=['id', 'bitscore', 'evalue'],
+			# 										ascending=[False, False, True]).groupby(
+			# 	['query', 'sgenome']).head(1)[['query', 'subject']]
+			# result_list['pair'] = result_list.apply(lambda row: tuple(sorted([row['query'], row['subject']])), axis=1)
+			# rbh = [key for key, value in Counter(result_list['pair']).items() if value == 2]
+			df_sorted = filtered_data.sort_values(by=['id', 'bitscore', 'evalue'], ascending=[False, False, True])
+			max_values = df_sorted.groupby(['query', 'sgenome']).agg({
+				'id': 'max',
+				'bitscore': 'max',
+				'evalue': 'min'
+			}).reset_index()
+			result_list = pd.merge(df_sorted, max_values, on=['query', 'sgenome', 'id', 'bitscore', 'evalue'])
 			result_list['pair'] = result_list.apply(lambda row: tuple(sorted([row['query'], row['subject']])), axis=1)
 			rbh = [key for key, value in Counter(result_list['pair']).items() if value == 2]
+
 		elif tag == 'sbh':  # none去blast的
 			result_list = filtered_data.sort_values(by=['id', 'bitscore', 'evalue'],
 													ascending=[False, False, True]).groupby(
 				['query']).head(1)[['query', 'sgenome']]
 			rbh = result_list.groupby('sgenome')['query'].apply(list).to_dict()
+		del filtered_data, result_list
+		gc.collect()
 		# 存放双向最优的配对结果
 		self.rbh = rbh
-		return
 
 	def build_homology_graph(self, out_dir):  # 构建rbh网络
 		"""

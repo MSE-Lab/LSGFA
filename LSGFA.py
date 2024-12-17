@@ -48,11 +48,15 @@ def get_parameters():
 
     # Pfam_cc.py部分的参数
     parser.add_argument(
+        '-blast',
+        choices=['diamond', 'mmseqs-search'],  # 只允许这几个选项
+        help='Select a method for blasting.')
+    parser.add_argument(
         '-id', dest='identity', type=int, default=40,
-        help='The identity of homology search, default = 40.')
+        help='The identity of homology search [0-100], default = 40.')
     parser.add_argument(
         '-c', dest='coverage', type=int, default=50,
-        help='The coverage of homology search, default = 50.')
+        help='The coverage of homology search [0-100], default = 50.')
     # parser.add_argument("--no_cc_output", action="store_true",
     #                     help="Do not output cc file")
 
@@ -60,43 +64,46 @@ def get_parameters():
     return args
 
 
-def make_working_dir(output_dirs):
-    for dir_name in output_dirs:
-        try:
-            shutil.rmtree(dir_name)
-        except FileNotFoundError:
-            pass
+def make_working_dir(output_dirs, delate=True):
+    if delate:
+        for dir_name in output_dirs:
+            try:
+                shutil.rmtree(dir_name)
+            except FileNotFoundError:
+                pass
     # 重新创建目录
     [os.makedirs(dir_, exist_ok=True) for dir_ in output_dirs]
 
 
-def work_flow(input_file, blast_out_dir, threads, sub_cc_dir, identity, coverage):
+def work_flow(input_file, blast_out_dir, threads, sub_cc_dir, identity, coverage, method, num):
     result_files = []
     agroup = DomainGroup(input_file)  # cc文件
     result_file_path = os.path.join(blast_out_dir, f'{agroup.name}.txt')  # blast的结果
+
     if not os.path.exists(result_file_path):
-        agroup.make_db(blast_out_dir, threads)  # make db
-        split_files = agroup.split_file(blast_out_dir)
-        for split_file in split_files:
-            result_file = agroup.homology_search(split_file, blast_out_dir, threads, identity, coverage)
+        if method == 'diamond':
+            agroup.make_db(blast_out_dir, threads)  # make db
+            split_files = agroup.split_file(blast_out_dir)
+            for split_file in split_files:
+                result_file = agroup.homology_search(split_file, blast_out_dir, threads, method, num, identity, coverage)
+                result_files.append(result_file)
+            agroup.merge_files(result_file_path, result_files)
+            if len(split_files) != 1:
+                for file in split_files + result_files:
+                    os.remove(file)
+        elif method == 'mmseqs-search':
+            result_file = agroup.homology_search(input_file, blast_out_dir, threads, method, num, identity, coverage)
             result_files.append(result_file)
-        agroup.merge_files(result_file_path, result_files)
-        if len(split_files) == 1:
-            for file in result_files:
-                os.remove(file)
-        else:
-            for file in split_files + result_files:
-                os.remove(file)
     agroup.handle_result(result_file_path, 'rbh')  # 处理blast结果
     agroup.build_homology_graph(sub_cc_dir)  # 建立rbh
 
 
-def parallel_workflow(faa_files, blast_out_dir, threads, sub_cc_dir, identity, coverage):
+def parallel_workflow(faa_files, blast_out_dir, threads, sub_cc_dir, identity, coverage, method, num = None):
     total_tasks = len(faa_files)  # 添加进度条
     make_working_dir([blast_out_dir, sub_cc_dir])
     with ThreadPoolExecutor(max_workers=threads) as executor:
         futures = {executor.submit(work_flow, faa, blast_out_dir, str(threads), sub_cc_dir,
-                                   str(identity), str(coverage)): faa for faa in faa_files}
+                                   str(identity), str(coverage), method, num): faa for faa in faa_files}
         with tqdm(total=total_tasks) as pbar:
             for future in as_completed(futures):
                 try:
@@ -109,6 +116,12 @@ def parallel_workflow(faa_files, blast_out_dir, threads, sub_cc_dir, identity, c
         for future in futures.keys():
             future.result()  # 确保每个任务都已完成，这里也会捕获异常
 
+    # 遍历指定目录中的所有项
+    for item in os.listdir(blast_out_dir):
+        item_path = os.path.join(blast_out_dir, item)
+        # 检查是否为目录且以'tmp'开头
+        if item.startswith('tmp'):
+            shutil.rmtree(item_path)  # 删除该目录及其内容
 
 class GeneGroup:
     """
@@ -140,7 +153,7 @@ def cc_list(cc_dir, species_num, hom_dir):
     members = sorted(glob.glob(os.path.join(cc_dir, '*.faa')))
     object_list = []
     for member in members:
-        cc_gene = list(gen_seqs_with_headers(member).keys())  # 该cc内的基因
+        cc_gene = gen_seqs_with_headers(member, extract_ids=True)  # 该cc内的基因
         cc_name = os.path.basename(member).split('.')[0]
         cc_species = set([i.split('|')[0] for i in cc_gene])
         marker_ = define_marker(len(cc_species) / int(species_num))
@@ -174,15 +187,15 @@ def put_out_file(object_list, out_dir):
 
 @time_used(f"[{timing()}]Whole processing Done")
 def main():
-    global OUT_DIR, THREADS, redundant_num
+    global OUT_DIR, THREADS
     # general options
     parameters = get_parameters()
     input_genomes_dir = parameters.input_dir
     OUT_DIR = parameters.output_dir
     THREADS = parameters.threads
 
-    identity = str(parameters.identity)
-    coverage = str(parameters.coverage)
+    identity = parameters.identity
+    coverage = parameters.coverage
 
     # PG.py
     pfam_dir = os.path.join(OUT_DIR, 'pfam')  # 存放pfam注释结果
@@ -208,22 +221,26 @@ def main():
                        graph_dir, query_dir, no_pfam,
                        homo_dir, pangenome_dir]
         make_working_dir(output_dirs)
+    else:
+        message(text=f"The program will continue what was left unfinished.", label='PROCESS')
+        output_dirs = [pfam_dir, graph_dir, query_dir, no_pfam,
+                       homo_dir, pangenome_dir]
+        make_working_dir(output_dirs, delate=False)
 
     max_genome = len([file for file in os.listdir(input_genomes_dir) if file.split(".")[-1] == 'faa'])
     message(text=f'genomes Numbers: {max_genome}', label='Information')
 
-    pp = Panproteome(input_genomes_dir)  # 初始化
-    message(text=f'Start with PFAM annotation ...', label='PROCESS')
-    pp.put_pfam_file(threads=THREADS, outdir=pfam_dir)  # pfam注释
-    if parameters.r:
-        message(text=f"Run deduplication.", label='PROCESS')
-        pp = pp.remove_redundant_sequences(outdir=OUT_DIR)
-    redundant_num = len(pp)
-    message(text=f"After removing the redundancy, there are {len(pp)} genomes left.", label='Information')
-    if parameters.pfam:
-        message(text='Pfam annotate Done.', label='PROCESS')
-    else:
-        if not os.path.exists(os.path.join(graph_dir, 'cc_infomation.txt')):
+    if not os.path.exists(os.path.join(graph_dir, 'cc_infomation.txt')):  # 如果按pfam划分这一步已经做完了
+        pp = Panproteome(input_genomes_dir)  # 初始化
+        message(text=f'Start with PFAM annotation ...', label='PROCESS')
+        pp.put_pfam_file(threads=THREADS, outdir=pfam_dir)  # pfam注释
+        if parameters.r:
+            message(text=f"Run deduplication.", label='PROCESS')
+            pp = pp.remove_redundant_sequences(outdir=OUT_DIR)
+        message(text=f"After removing the redundancy, there are {len(pp)} genomes left.", label='Information')
+        if parameters.pfam:
+            message(text='Pfam annotate Done.', label='PROCESS')
+        else:
             # 输出domain聚类的cc
             message(text=f'Start building the graph ...', label='PROCESS')
             pfam_graph = PGraph(pp, no_pfam)  # 初始化，提出需要做blast的文件
@@ -234,25 +251,38 @@ def main():
             pfam_graph.la_find_partition(graph_dir, query_dir)  # 社区发现
             del pfam_graph  # 删除pfam_graph
 
-        if parameters.pg:
-            message(text='Pfam graph search Done.', label='PROCESS')
-        else:
-            # Pfam_cc.py
+    with open(os.path.join(graph_dir, 'cc_infomation.txt'), 'r') as file:
+        redundant_num = file.readline().rstrip().split(' ')[-1]
+
+    if parameters.pfam:
+        message(text='Pfam annotate Done.', label='PROCESS')
+    elif parameters.pg:
+        message(text='Pfam graph search Done.', label='PROCESS')
+    else:
+        # Pfam_cc.py
+        unused_sequences_file = os.path.join(no_pfam, 'unused_sequences.faa')
+        blast_dir = os.path.join(homo_dir, 'blast')
+        sub_cc = os.path.join(homo_dir, 'sub_cc')
+        make_working_dir([blast_dir, sub_cc], delate=False)
+        if not os.path.exists(unused_sequences_file):  # 如果还没有做mapping
             faa_files = sorted(glob.glob(os.path.join(query_dir, '*.fa')))
-            parallel_workflow(faa_files, os.path.join(homo_dir, 'blast'), THREADS, os.path.join(homo_dir, 'sub_cc'),
-                              identity, coverage)  # 并行做blast
+            parallel_workflow(faa_files, blast_dir, THREADS, sub_cc,
+                              identity, coverage, parameters.blast, redundant_num)  # cc内部
 
             none_dict = gen_seqs_with_headers(os.path.join(no_pfam, 'none_pfam.fa'))  # none去mapping已有的cc
-            unused_sequences_file = mapping.mapping_cc_flow(os.path.join(homo_dir, 'sub_cc'), no_pfam, none_dict,
-                                                            THREADS)
-            # 没有mapping的结果自己做组内blast
-            mapping.none_parallel(unused_sequences_file, os.path.join(homo_dir, 'blast'), THREADS,
-                                  os.path.join(homo_dir, 'sub_cc'), identity, coverage)
-            for infile in glob.glob(os.path.join(homo_dir, 'blast', '*.dmnd')):  # 删除diamond的db
-                os.remove(infile)
-            # count_pangenome.py 统计泛基因组的信息
-            object_list = cc_list(os.path.join(homo_dir, 'sub_cc'), redundant_num, homo_dir)
-            put_out_file(object_list, pangenome_dir)
+            mapping.mapping_cc_flow(os.path.join(homo_dir, 'sub_cc'), no_pfam, none_dict,
+                                    THREADS, redundant_num, parameters.blast)
+
+        # 没有mapping的结果自己做组内cluster
+            mapping.none_mmseqs_cluster(unused_sequences_file, no_pfam, THREADS,
+                                        sub_cc, 'mmseqs-cluster', redundant_num, identity, coverage)
+
+        for infile in glob.glob(os.path.join(blast_dir, '*.dmnd')):  # 删除diamond的db
+            os.remove(infile)
+
+        # count_pangenome.py 统计泛基因组的信息
+        object_list = cc_list(sub_cc, redundant_num, homo_dir)
+        put_out_file(object_list, pangenome_dir)
     message(text='Analyse Done.', label='PROCESS')
 
 

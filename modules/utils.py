@@ -181,24 +181,31 @@ class CallCmd:
         pool.join()
 
 
-def gen_seqs_with_headers(fn):
+def gen_seqs_with_headers(fn, extract_ids=False):
     with open(fn) as f:
         fh = f.readlines()
     header = None
     seqs = []
     gene_seqs = dict()
-
-    for line in fh:
-        line = line.strip()
-        if line.startswith('>'):
-            if header is not None:
-                gene_seqs[header] = "".join(seqs)
-            header = line[1:]
-            seqs = []
-        else:
-            seqs.append(line)
+    gene_ids = []
+    if not extract_ids:
+        for line in fh:
+            line = line.strip()
+            if line.startswith('>'):
+                if header is not None:  # 提取整个文件
+                    gene_seqs[header] = "".join(seqs)
+                header = line[1:]
+                seqs = []
+            else:
+                seqs.append(line)
         # 保存最后一个读取到的序列
-    if seqs and header is not None:
-        gene_seqs[header] = "".join(seqs)
-
-    return gene_seqs
+        if seqs and header is not None and not extract_ids:
+            gene_seqs[header] = "".join(seqs)
+        return gene_seqs
+    if extract_ids:
+        for line in fh:
+            line = line.strip()
+            if line.startswith('>'):
+                header = line[1:]
+                gene_ids.append(header)
+        return gene_ids
