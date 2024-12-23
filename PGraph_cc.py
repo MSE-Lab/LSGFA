@@ -10,6 +10,7 @@ import argparse
 
 global OUT_DIR, THREADS
 
+
 def get_parameters():
     parser = argparse.ArgumentParser(
         description='This program can get the Pfam Network. ')
@@ -19,9 +20,10 @@ def get_parameters():
     parser.add_argument(
         '-o', '--out', type=str, dest='output_dir', default=os.getcwd(),
         help=f'specify a output directory default: {os.getcwd()}')
-    parser.add_argument(
-        '-f', '--force', type=str, dest='re_run', default=False,
-        help=f'Re-perform the homology search; default: False')
+    parser.add_argument('-fa', action='store_true',
+                        help='Re-perform the homology search(not including pfam annotation)')
+    parser.add_argument('-r', action='store_true',
+                        help='Run deduplication')
     parser.add_argument(
         '-t', '--threads', type=int, dest='threads', default=8,
         help='Hmmscan threads. default: 8')
@@ -29,19 +31,16 @@ def get_parameters():
     return args
 
 
-def make_working_dir(re_run):
-    output_dirs = ['graph', 'query', 'none_pfam', 'pfam',
-                   'none_pfam/fa_file']
-    if re_run:  # 如果强制重做
-        for dir_name in output_dirs:
-            try:
-                shutil.rmtree(os.path.join(OUT_DIR, dir_name))
-            except FileNotFoundError:
-                pass
+def make_working_dir(output_dirs):
+    for dir_name in output_dirs:
         try:
-            os.remove(os.path.join(OUT_DIR, 'orthogroups.csv'))
+            shutil.rmtree(os.path.join(OUT_DIR, dir_name))
         except FileNotFoundError:
             pass
+    try:
+        os.remove(os.path.join(OUT_DIR, 'orthogroups.csv'))
+    except FileNotFoundError:
+        pass
     # 重新创建目录
     [os.makedirs(os.path.join(OUT_DIR, dir_), exist_ok=True) for dir_ in output_dirs]
 
@@ -54,20 +53,33 @@ def main():
     input_genomes_dir = parameters.input_dir
     OUT_DIR = parameters.output_dir
     THREADS = parameters.threads
-    re_run = parameters.re_run
 
     pfam_dir = os.path.join(OUT_DIR, 'pfam')
     graph_dir = os.path.join(OUT_DIR, 'graph')
     query_dir = os.path.join(OUT_DIR, 'query')
     no_pfam = os.path.join(OUT_DIR, 'none_pfam')
 
-    make_working_dir(re_run)  # 创建需要的目录
+    # 判断是否进行重做
+    if parameters.fa:
+        message(text=f"Re-perform the homology search.", label='PROCESS')
+        output_dirs = ['graph', 'query', 'none_pfam',
+                       'none_pfam/fa_file']
+        make_working_dir(output_dirs)
+    else:
+        message(text=f"Re-perform the homology search(including annotation).", label='PROCESS')
+        output_dirs = ['graph', 'query', 'none_pfam', 'pfam',
+                       'none_pfam/fa_file']
+        make_working_dir(output_dirs)
+
     max_genome = len([file for file in os.listdir(input_genomes_dir) if file.split(".")[-1] == 'faa'])
     message(text=f'genomes Numbers: {max_genome}', label='Information')
 
     pp = Panproteome(input_genomes_dir)  # 初始化
     message(text=f'Start with PFAM annotation ...', label='PROCESS')
-    pp.put_pfam_file(threads=100, outdir=pfam_dir)  # pfam注释
+    pp.put_pfam_file(threads=THREADS, outdir=pfam_dir)  # pfam注释
+    if parameters.r:
+        message(text=f"Run deduplication.", label='PROCESS')
+        pp = pp.remove_redundant_sequences(outdir=OUT_DIR)
 
     # 输出domain聚类的cc
     message(text=f'Start building the graph ...', label='PROCESS')

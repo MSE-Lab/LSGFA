@@ -48,13 +48,15 @@ def time_used(info=''):
     def timer(function):
         @functools.wraps(function)
         def wrapper(*args, **kwargs):
-            start = time.perf_counter() if sys.version[0] == '3' else time.clock()
+            start = time.perf_counter()  # 使用 perf_counter 获取高精度计时
             results = function(*args, **kwargs)
-            end = time.perf_counter() if sys.version[0] == '3' else time.clock()
+            end = time.perf_counter()
             time_use = end - start
-            print(
-                f'{info}: {time_use // 3600:.0f}h {(time_use % 3600) // 60:.0f}m {((time_use % 3600) % 60) % 60:.0f}s'
-            )
+            # 输出耗时，以秒为单位，保留小数点后两位
+            print(f'{info}: {time_use:.2f}s')
+            # print(
+            #     f'{info}: {time_use // 3600:.0f}h {(time_use % 3600) // 60:.0f}m {((time_use % 3600) % 60) % 60:.0f}s'
+            # )
             return results
         return wrapper
     return timer
@@ -177,3 +179,33 @@ class CallCmd:
         self.manager_queue(queue)
         pool.close()
         pool.join()
+
+
+def gen_seqs_with_headers(fn, extract_ids=False):
+    with open(fn) as f:
+        fh = f.readlines()
+    header = None
+    seqs = []
+    gene_seqs = dict()
+    gene_ids = []
+    if not extract_ids:
+        for line in fh:
+            line = line.strip()
+            if line.startswith('>'):
+                if header is not None:  # 提取整个文件
+                    gene_seqs[header] = "".join(seqs)
+                header = line[1:]
+                seqs = []
+            else:
+                seqs.append(line)
+        # 保存最后一个读取到的序列
+        if seqs and header is not None and not extract_ids:
+            gene_seqs[header] = "".join(seqs)
+        return gene_seqs
+    if extract_ids:
+        for line in fh:
+            line = line.strip()
+            if line.startswith('>'):
+                header = line[1:]
+                gene_ids.append(header)
+        return gene_ids

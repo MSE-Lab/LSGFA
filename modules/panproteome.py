@@ -3,12 +3,12 @@ import glob
 import os
 from collections import defaultdict
 from multiprocessing import Pool, Manager
-from pyfasta import Fasta
 from modules.utils import *
 from modules.pfam import *
+from tqdm import tqdm
 
-pfamDB = os.path.join(os.getcwd(), 'modules', 'database', 'Pfam-A.hmm')
-# pfamDB = '/media/disk2/biodatabases/Pfam/Pfam-A.hmm'  # 浪潮
+# pfamDB = os.path.join(os.getcwd(), 'modules', 'database', 'Pfam-A.hmm')
+pfamDB = '/media/disk2/biodatabases/Pfam/Pfam-A.hmm'  # 浪潮
 # pfamDB = '/home/biodbs/Pfam35.0/Pfam-A.hmm'  # 集群
 
 
@@ -61,7 +61,7 @@ class Protein:
 
 class Proteome(list):
     """
-    存放1蛋白质组
+    存放蛋白质组
     """
 
     def __init__(self, fasta_name, name: str = None, size: int = None):
@@ -74,36 +74,40 @@ class Proteome(list):
         return self.name
 
     def _read_fasta(self, fasta_name):
-        fasta_file = Fasta(fasta_name)
+        fasta_file = gen_seqs_with_headers(fasta_name)
         for seqid, seq in fasta_file.items():
             seqid = seqid.split(" ")[0]  # 去除faa文件里的功能描述部分
             aProtein = Protein(name=seqid, sequence=seq)
             self.append(aProtein)
         self.name = os.path.basename(fasta_name).replace('.faa', '')
         self.size = len(self)
-        os.remove(f"{fasta_name}.flat")
-        os.remove(f"{fasta_name}.gdx")
+        # os.remove(f"{fasta_name}.flat")
+        # os.remove(f"{fasta_name}.gdx")
 
     def search_pfam_domain(self, threads=60, evalue='1e-5'):
         """
         搜索Pfam-A.hmm
         """
-        processes = Pool(processes=threads)
         aQueue = Manager().Queue()
+        # 限制最大进程数，并使用 with 确保资源释放
+        with Pool(processes=threads) as processes:
+            for protein in self:
+                processes.apply_async(protein.identify_pfam, args=(aQueue, evalue))
+            identified_pfams = dict()
+            ntd = 0
+            while True:
+                try:
+                    a = aQueue.get(timeout=None)  # 阻塞等待直到有结果可用
+                    identified_pfams[a[0]] = a[1]
+                    ntd += 1
+                    if ntd == self.size:  # 当获取到的结果数量等于蛋白质序列数量时停止
+                        break
+                except Exception as e:
+                    print(f"Error retrieving from queue: {e}")
+                    break
+        # 将识别出的Pfam域分配给对应的蛋白质对象
         for protein in self:
-            processes.apply_async(protein.identify_pfam, args=(aQueue, evalue))
-        processes.close()
-        identified_pfams = dict()
-        ntd = 0
-        while True:
-            a = aQueue.get(timeout=None)
-            identified_pfams[a[0]] = a[1]
-            ntd += 1
-            if ntd == self.size:
-                # 当从进程池队列中get的结果数量等于Proteome的size，即蛋白质序列数量时停止get结果
-                break
-        for protein in self:
-            protein.domain = identified_pfams[protein.name]
+            protein.domain = identified_pfams.get(protein.name, None)  # 使用 get 避免 KeyError
         return
 
     def write_out_pfam(self, out_dir):  # self是一个faa文件
@@ -127,7 +131,7 @@ class Panproteome(list):
 
     def __init__(self, f):
         super().__init__()
-        for faa_file in glob.glob(os.path.join(f, '*.faa')):
+        for faa_file in sorted(glob.glob(os.path.join(f, '*.faa'))):
             aProteome = Proteome(fasta_name=faa_file)
             self.append(aProteome)
 
@@ -142,9 +146,9 @@ class Panproteome(list):
         proteome: Proteome
         completed_proteomes = [os.path.splitext(os.path.basename(file))[0] for file in
                       glob.glob(os.path.join(outdir, '*.pfam'))]
+        message(text=f"{len(completed_proteomes)} already processed. Skipping...", label='Information')
         for proteome in self:
             if proteome.name in completed_proteomes:
-                message(text=f"Proteome {proteome.name} already processed. Skipping...")
                 json_data = FileOperator(f'{proteome}.pfam', outdir, "json")
                 json_data.read()
                 for protein in proteome:
@@ -163,3 +167,30 @@ class Panproteome(list):
     def put_pfam_file(self, threads, outdir):
         # 并行的运行hmmscan为每个proteome.faa鉴定pfam
         self._identify_pfam(threads=threads, outdir=outdir)
+
+    def remove_redundant_sequences(self, outdir):
+        pfam_dict = {}
+        for proteome in self:
+            pfam_set = set()
+            for protein in proteome:
+                if sum([i.percent for i in protein.domain]) <= 0.6:  # 在长度上判断
+                    pfam_ = "None"
+                else:
+                    pfam_ = ','.join(sorted([i.id for i in protein.domain]))
+                pfam_set.add(pfam_)
+            # 如果这个pfam不存在set中
+            pfam_key = frozenset(pfam_set)
+            if pfam_key not in pfam_dict:
+                pfam_dict[pfam_key] = []
+            pfam_dict[pfam_key].append(proteome)
+        # 随机选择每个pfam组中的一个对象
+        unique_proteomes = []
+        redundancy_string = ''
+        for group in pfam_dict.values():
+            # 按照 size 降序排列，如果 size 相同则按名称升序排列
+            sorted_group = sorted(group, key=lambda x: (-x.size, x.name))
+            represent = sorted_group[0]
+            unique_proteomes.append(represent)
+            redundancy_string += f"* {represent.name}\n" + ' '.join([i.name for i in group]) + '\n'
+        FileOperator('redundancy_infomation.txt', dir_=outdir, data=redundancy_string).write()
+        return unique_proteomes

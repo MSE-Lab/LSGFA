@@ -57,6 +57,7 @@ class PGraph:
         self.domain_type = []  # 保存pfam_type属性
         self.connection = {}  # 用字典来保存connection属性，key是边的两个节点，value是权重
         self.graph = None  # 存储该PGraph的图
+        self.genomes_num = len(proteomes)
         domain_dict = {}
         protein_num = 0
         for proteome in proteomes:
@@ -139,7 +140,7 @@ class PGraph:
         node_data = FileOperator('node_genes.txt', graph_dir, data=result)
         node_data.write()
 
-    def la_find_partition(self, out_dir):  # 社区发现
+    def la_find_partition(self, graph_dir, query_dir):  # 社区发现
         partition = la.find_partition(self.graph, partition_type=la.CPMVertexPartition,
                                       weights='weight',
                                       resolution_parameter=0.9)
@@ -158,16 +159,24 @@ class PGraph:
             genome_size = min(Counter(genomes).values())
             genome_len = len(set(genomes))
             # if len(genes_in_community) > 3:
-            partition_genes.append(genes_in_community)
+            # partition_genes.append(genes_in_community)
+
+            fasta = '\n'.join([f'>{protein.name}\n{protein.sequence}' for protein in genes_in_community])
+            fasta_o = FileOperator(name=f'cc{cc_num:0>7}.fa', dir_=query_dir, data=fasta)
+            fasta_o.write()
+
+            # 记录cc的信息
             cc_id = f'cc{cc_num:0>7}'
             result += f'{cc_id}\t{cc_size}\t{pattern_num}\t{genome_len}\t{genome_size}\n'
             cc_num += 1
-            with open(os.path.join(out_dir, 'cc_infomation.txt'), 'w') as f_obj:
-                title = 'cc_id\tcc_size\tpattern_num\tgenome_len\tgenome_size\n'
-                f_obj.write(title)
-                f_obj.write(result)
-        # 返回的是一个list of list，里面每个元素是一个社区内的所有节点，节点是Protein的对象
-        return partition_genes
+        # # 输出cc的文件
+        # self.put_out_cc(partition_genes, query_dir)
+        # 输出cc的信息
+        with open(os.path.join(graph_dir, 'cc_infomation.txt'), 'w') as f_obj:
+            f_obj.write(f'genomes number: {self.genomes_num}\n')
+            title = 'cc_id\tcc_size\tpattern_num\tgenome_len\tgenome_size\n'
+            f_obj.write(title)
+            f_obj.write(result)
 
     @staticmethod
     def put_out_cc(partition_genes, out_dir):
