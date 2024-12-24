@@ -177,12 +177,3 @@ class PGraph:
             title = 'cc_id\tcc_size\tpattern_num\tgenome_len\tgenome_size\n'
             f_obj.write(title)
             f_obj.write(result)
-
-    @staticmethod
-    def put_out_cc(partition_genes, out_dir):
-        cc_num = 0
-        for partition in partition_genes:
-            fasta = '\n'.join([f'>{protein.name}\n{protein.sequence}' for protein in partition])
-            fasta_o = FileOperator(name=f'cc{cc_num:0>7}.fa', dir_=out_dir, data=fasta)
-            fasta_o.write()
-            cc_num += 1

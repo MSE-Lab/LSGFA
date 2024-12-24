@@ -1,6 +1,7 @@
 import os
 import gc
 import subprocess
+import shutil
 import pandas as pd
 from igraph import Graph
 from modules.utils import *
@@ -41,6 +42,7 @@ class DomainGroup:
 				'--min-seq-id', str(int(identity)/100), '-c', str(int(cover)/100)])
 		blast_cap = subprocess.Popen(blast_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
 		blast_cap.communicate()
+		shutil.rmtree(os.path.join(blast_dir, f'tmp_{self.name}'))
 		return res
 
 	def make_db(self, out_dir, threads):
@@ -102,7 +104,7 @@ class DomainGroup:
 		data = pd.read_csv(result_file, sep='\t', header=None,
 						names=['query', 'subject', 'id', 'length', 'mismatch',
 								'gapopen', 'qstart', 'qend', 'sstart',
-								'send', 'evalue', 'bitscore'],
+								'send', 'evalue', 'bitscore'],  # mmseq的结果和diamond的结果，在默认情况下是一样的
 						usecols=necessary_columns)
 		# 提取基因组
 		data[['qgenome', 'sgenome']] = data[['query', 'subject']].map(lambda x: x.split('|')[0])

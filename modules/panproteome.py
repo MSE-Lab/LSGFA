@@ -1,15 +1,13 @@
 import subprocess
 import glob
 import os
+import shutil
+import pandas as pd
 from collections import defaultdict
 from multiprocessing import Pool, Manager
 from modules.utils import *
-from modules.pfam import *
+from modules.pfam import Pfam, Hits
 from tqdm import tqdm
-
-# pfamDB = os.path.join(os.getcwd(), 'modules', 'database', 'Pfam-A.hmm')
-pfamDB = '/media/disk2/biodatabases/Pfam/Pfam-A.hmm'  # 浪潮
-# pfamDB = '/home/biodbs/Pfam35.0/Pfam-A.hmm'  # 集群
 
 
 class Protein:
@@ -25,11 +23,11 @@ class Protein:
     def __str__(self):
         return self.name
 
-    def _hmm_profile(self, scan_out):
-        aHits = Hits(scan_out)
+    def hmm_profile(self, scan_out, scan_type):
+        aHits = Hits(scan_out, scan_type)
         self.domain = aHits  # domain是很多pfam的组合
 
-    def _hmm_scan(self, evalue='1e-5'):
+    def _hmm_scan(self, pfamDB, evalue='1e-5'):
         """
         对每条蛋白序列使用hmmscan进行Pfam注释
         :param evalue: evalue阈值
@@ -49,11 +47,11 @@ class Protein:
         else:
             # remove input temporary sequence file
             os.unlink(in_temp.name)
-        self._hmm_profile(out_temp.name)
+        self.hmm_profile(out_temp.name, scan_type='hmmscan')
         return out_temp.name
 
-    def identify_pfam(self, queue, evalue='1e-5'):
-        out_hmmscan = self._hmm_scan(evalue)
+    def identify_pfam(self, queue, pfamDB, evalue='1e-5'):
+        out_hmmscan = self._hmm_scan(pfamDB, evalue)
         os.unlink(out_hmmscan)
         # 通过进程池 Protein.domain 似乎无法更新，所以把结果put出来在进程池外再更新
         queue.put((self.name, self.domain))
@@ -64,27 +62,71 @@ class Proteome(list):
     存放蛋白质组
     """
 
-    def __init__(self, fasta_name, name: str = None, size: int = None):
+    def __init__(self, fasta_name, size: int = None):
         super().__init__()
-        self.name = name
+        self.name = os.path.basename(fasta_name).replace('.faa', '')
         self.size = size
-        self._read_fasta(fasta_name)
+        self.file = fasta_name  # 带路径的file
 
     def __str__(self):
         return self.name
 
-    def _read_fasta(self, fasta_name):
-        fasta_file = gen_seqs_with_headers(fasta_name)
-        for seqid, seq in fasta_file.items():
+    def add_seq(self):
+        fasta_seqs = gen_seqs_with_headers(self.file)
+        for seqid, seq in fasta_seqs.items():
             seqid = seqid.split(" ")[0]  # 去除faa文件里的功能描述部分
-            aProtein = Protein(name=seqid, sequence=seq)
-            self.append(aProtein)
+            for protein in self:  # protein是Protein对象
+                if protein.name == seqid:
+                    protein.sequence = seq
+            # 如果没有找到匹配的Protein，创建新的Protein并添加到proteins列表中
+            new_protein = Protein(name=seqid, sequence=seq)
+            self.append(new_protein)
+
+    def read_fasta(self, fasta_name, extract_ids):
+        fasta_file = gen_seqs_with_headers(fasta_name, extract_ids)
+        if not extract_ids:
+            for seqid, seq in fasta_file.items():
+                seqid = seqid.split(" ")[0]  # 去除faa文件里的功能描述部分
+                aProtein = Protein(name=seqid, sequence=seq)
+                self.append(aProtein)
+        elif extract_ids:
+            for seqid in fasta_file:
+                seqid = seqid.split(" ")[0]
+                aProtein = Protein(name=seqid)
+                self.append(aProtein)
         self.name = os.path.basename(fasta_name).replace('.faa', '')
         self.size = len(self)
-        # os.remove(f"{fasta_name}.flat")
-        # os.remove(f"{fasta_name}.gdx")
 
-    def search_pfam_domain(self, threads=60, evalue='1e-5'):
+    def search_mmseq_pfam_domain(self, mmseq_db, out_dir, threads, evalue=1e-5):
+        """
+        使用mmseqs注释pfam
+        """
+        res = os.path.join(out_dir, f'result_{self.name}.pfam')
+        tmp_dir = os.path.join(out_dir, f'{str(self.name)}_tmp')
+        mmseqs_cmd = ' '.join(
+            ['mmseqs', 'easy-search', self.file, mmseq_db, res, tmp_dir,
+             '-e', str(evalue), '--threads', str(threads),
+             '--format-output', 'query,target,qlen,qstart,qend,tlen,tstart,tend,alnlen,bits,evalue,gapopen,fident'])
+        mmseqs_cmd = subprocess.Popen(mmseqs_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+        mmseqs_cmd.communicate()
+
+        # 处理mmseqs的结果
+        necessary_columns = ['query', 'target', 'qlen', 'qstart', 'qend']
+        grouped_data = pd.read_csv(res, sep='\t', header=None,
+                                   names=['query', 'target', 'qlen', 'qstart', 'qend',
+                                          'tlen', 'tstart', 'tend', 'alnlen', 'bits',
+                                          'evalue', 'gapopen', 'fident'],
+                                   usecols=necessary_columns).groupby('query')
+
+        for query, group in grouped_data:
+            aProtein = Protein(name=str(query))
+            aProtein.hmm_profile(group, 'mmseqs')
+            self.append(aProtein)
+        os.remove(res)
+        shutil.rmtree(tmp_dir)
+        return
+
+    def search_pfam_domain(self, threads, pfam_db, evalue='1e-5'):
         """
         搜索Pfam-A.hmm
         """
@@ -92,7 +134,7 @@ class Proteome(list):
         # 限制最大进程数，并使用 with 确保资源释放
         with Pool(processes=threads) as processes:
             for protein in self:
-                processes.apply_async(protein.identify_pfam, args=(aQueue, evalue))
+                processes.apply_async(protein.identify_pfam, args=(aQueue, pfam_db, evalue))
             identified_pfams = dict()
             ntd = 0
             while True:
@@ -121,6 +163,7 @@ class Proteome(list):
             else:
                 proteome_domain[protein.name]["Domain"] = list()
                 proteome_domain[protein.name]["LenCov"] = list()
+            protein.sequence = ""  # 每个蛋白质做完后就把序列的属性删掉
         FileOperator(f'{self.name}.pfam', out_dir, "json", proteome_domain).write()
 
 
@@ -129,29 +172,21 @@ class Panproteome(list):
     存放泛基因组
     """
 
-    def __init__(self, f):
+    def __init__(self, f, outdir, threads, db, method, evalue):
         super().__init__()
+
+        completed_proteomes = [os.path.splitext(os.path.basename(file))[0] for file in
+                               glob.glob(os.path.join(outdir, '*.pfam'))]
+        message(text=f"{len(completed_proteomes)} already processed. Skipping...", label='Information')
+
         for faa_file in sorted(glob.glob(os.path.join(f, '*.faa'))):
             aProteome = Proteome(fasta_name=faa_file)
             self.append(aProteome)
-
-    def _identify_pfam(self, threads, outdir):
-        """
-        对每个基因组进行Pfam的鉴定
-        存在鉴定结果的，读取鉴定结果，进行Protein实例化
-        :param threads: 线程
-        :param outdir: 输出目录
-        """
-
-        proteome: Proteome
-        completed_proteomes = [os.path.splitext(os.path.basename(file))[0] for file in
-                      glob.glob(os.path.join(outdir, '*.pfam'))]
-        message(text=f"{len(completed_proteomes)} already processed. Skipping...", label='Information')
-        for proteome in self:
-            if proteome.name in completed_proteomes:
-                json_data = FileOperator(f'{proteome}.pfam', outdir, "json")
+            if aProteome.name in completed_proteomes:
+                aProteome.read_fasta(fasta_name=faa_file, extract_ids=True)
+                json_data = FileOperator(f'{aProteome}.pfam', outdir, "json")
                 json_data.read()
-                for protein in proteome:
+                for protein in aProteome:
                     protein: Protein
                     domain_list = []
                     for i in range(len(json_data.data[protein.name]['Domain'])):
@@ -160,13 +195,20 @@ class Panproteome(list):
                         domain_list.append(Pfam(pfam_id=pfam_id, percent=percent))
                     protein.domain = domain_list
             else:
-                message(text=f'identify Pfam for {proteome.name}')
-                proteome.search_pfam_domain(threads=threads)
-                proteome.write_out_pfam(out_dir=outdir)
+                message(text=f'identify Pfam for {aProteome.name}')
+                if method == 'hmmscan':
+                    aProteome.read_fasta(fasta_name=faa_file, extract_ids=False)
+                    aProteome.search_pfam_domain(threads=threads, pfam_db=db, evalue=evalue)
+                elif method == 'mmseqs-search':
+                    aProteome.read_fasta(fasta_name=faa_file, extract_ids=True)
+                    aProteome.search_mmseq_pfam_domain(mmseq_db=db, out_dir=outdir,
+                                                       threads=threads, evalue=evalue)
+                aProteome.write_out_pfam(out_dir=outdir)
 
-    def put_pfam_file(self, threads, outdir):
-        # 并行的运行hmmscan为每个proteome.faa鉴定pfam
-        self._identify_pfam(threads=threads, outdir=outdir)
+
+    def add_proteome_sequence(self):
+        for proteome in self:
+            proteome.add_seq()
 
     def remove_redundant_sequences(self, outdir):
         pfam_dict = {}
@@ -193,4 +235,6 @@ class Panproteome(list):
             unique_proteomes.append(represent)
             redundancy_string += f"* {represent.name}\n" + ' '.join([i.name for i in group]) + '\n'
         FileOperator('redundancy_infomation.txt', dir_=outdir, data=redundancy_string).write()
-        return unique_proteomes
+        self.clear()
+        self.extend(unique_proteomes)
+        return

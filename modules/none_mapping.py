@@ -9,6 +9,7 @@ import subprocess
 from modules.utils import gen_seqs_with_headers
 from modules.homology_search import DomainGroup
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import shutil
 from tqdm import tqdm
 
 
@@ -38,7 +39,8 @@ def mapping_cc_flow(sub_cc_dir, none_dir, none_dict, threads, num, method):
 
     # none_pfam的部分与cc
     combinedGroup = DomainGroup(combined_sequences_file)
-    combinedGroup.make_db(none_dir, threads)  # make db
+    if method == 'diamond':
+        combinedGroup.make_db(none_dir, threads)  # make db
     result_file = combinedGroup.homology_search(none_file, none_dir, threads, method, num, identity='99')
     combinedGroup.handle_result(result_file, 'sbh')  # 处理blast结果，取单向
 
@@ -137,6 +139,7 @@ def none_mmseqs_cluster(input_file, mmseqs_out_dir, threads, sub_cc_dir, method,
             '-s', '7.5', '-e', '1.000E-05', '--threads', str(thread), '--min-seq-id', str(id/100), '-c', str(cov/100)])
         mmseqs_cmd = subprocess.Popen(mmseqs_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         mmseqs_cmd.communicate()
+        shutil.rmtree(os.path.join(out_dir, 'tmp'))
         return res
 
     def mmseqs_search(input, out_dir, thread, method, sub_cc_dir, id, cov, num):
