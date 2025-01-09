@@ -61,7 +61,7 @@ class PGraph:
         domain_dict = {}
         protein_num = 0
         for proteome in proteomes:
-            for protein in proteome:  # 对protein重新分类，实例化DomainType
+            for protein in proteome.values():  # 对protein重新分类，实例化DomainType
                 protein_num += 1
                 if sum([i.percent for i in protein.domain]) <= 0.6:  # 在长度上判断
                     pfam_ = "None"
@@ -82,8 +82,6 @@ class PGraph:
                 aDomainType = DomainType(name=pfam_type, proteins=proteins)
                 self.domain_type.append(aDomainType)
 
-        message(text=f"Genes number: {protein_num}", label='Information')
-        message(text=f"None pfam genes number: {len(domain_dict['None'])}", label='Information')
         message(text=f"DomainType number: {len(self.domain_type)}", label='Information')
         self._get_edges()  # 获取边的信息
 

@@ -1,7 +1,6 @@
 import os
 import gc
 import subprocess
-import shutil
 import pandas as pd
 from igraph import Graph
 from modules.utils import *
@@ -18,7 +17,7 @@ class DomainGroup:
 		self.file = fasta_name
 		self.name = os.path.basename(fasta_name).split('.')[0]
 		self.db = None
-		self.rbh = None
+		self.rbh = []
 		self.graph = graph
 
 	def __len__(self):
@@ -42,7 +41,7 @@ class DomainGroup:
 				'--min-seq-id', str(int(identity)/100), '-c', str(int(cover)/100)])
 		blast_cap = subprocess.Popen(blast_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
 		blast_cap.communicate()
-		shutil.rmtree(os.path.join(blast_dir, f'tmp_{self.name}'))
+		# shutil.rmtree(os.path.join(blast_dir, f'tmp_{self.name}'))
 		return res
 
 	def make_db(self, out_dir, threads):
@@ -98,7 +97,7 @@ class DomainGroup:
 		none到cc的balst取单向最优，即none为query，cc_combine为subject
 		"""
 		# 读取文件内
-		rbh = None
+		rbh = []
 		# 仅读取以下列名的内容
 		necessary_columns = ['query', 'subject', 'id', 'evalue', 'bitscore']
 		data = pd.read_csv(result_file, sep='\t', header=None,

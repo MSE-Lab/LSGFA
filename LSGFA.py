@@ -20,7 +20,7 @@ def get_parameters():
 
     # 基本参数
     parser.add_argument(
-        '-i', '--in', type=str, dest='input_dir', default=False,
+        '-i', '--in', type=str, dest='input_dir',
         help='The directory including all genome files')
     parser.add_argument(
         '-o', '--out', type=str, dest='output_dir', default=os.getcwd(),
@@ -101,7 +101,11 @@ def work_flow(input_file, blast_out_dir, threads, sub_cc_dir, identity, coverage
         elif method == 'mmseqs-search':
             result_file = agroup.homology_search(input_file, blast_out_dir, threads, method, num, identity, coverage)
             result_files.append(result_file)
-    agroup.handle_result(result_file_path, 'rbh')  # 处理blast结果
+    try:
+        agroup.handle_result(result_file_path, 'rbh')  # 处理blast结果
+    except FileNotFoundError as e:
+        print(f"Error: {e}. \n"
+              f"Some error happend, there is no {result_file}.")
     agroup.build_homology_graph(sub_cc_dir)  # 建立rbh
 
 
@@ -122,6 +126,9 @@ def parallel_workflow(faa_files, blast_out_dir, threads, sub_cc_dir, identity, c
         # 等待所有任务完成（虽然 as_completed 已经做了这个，但我们可以显式地处理）
         for future in futures.keys():
             future.result()  # 确保每个任务都已完成，这里也会捕获异常
+    for dir_name in os.listdir(blast_out_dir):
+        if os.path.isdir(dir_name) and dir_name.startswith('tmp'):
+            shutil.rmtree(dir_name)
 
 
 class GeneGroup:
@@ -241,16 +248,21 @@ def main():
             message(text='Pfam annotate Done.', label='PROCESS')
         else:
             # 输出domain聚类的cc
-            message(text=f'Start building the graph ...', label='PROCESS')
+            message(text='Start adding sequences ...', label='PROCESS')
             pp.add_proteome_sequence()
+            message(text=f'Start building the graph ...', label='PROCESS')
             pfam_graph = PGraph(pp, no_pfam)  # 初始化，提出需要做blast的文件
             del pp  # 删除pp释放内存
 
+            message(text='Start generating graph ...', label='PROCESS')
             pfam_graph.generate_graph()  # 构建网络
+            message(text='Start puting graph file ...', label='PROCESS')
             pfam_graph.put_graph_file(graph_dir)  # 输出网络相关文件
+            message(text='Start finding partition ...', label='PROCESS')
             pfam_graph.la_find_partition(graph_dir, query_dir)  # 社区发现
             del pfam_graph  # 删除pfam_graph
-
+    # 输出Pfam的相关统计信息
+    count_all_pfam(pfam_dir)
     if parameters.pfam:
         message(text='Pfam annotate Done.', label='PROCESS')
     elif parameters.pg:

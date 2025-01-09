@@ -8,6 +8,7 @@ from multiprocessing import Pool, Manager
 from modules.utils import *
 from modules.pfam import Pfam, Hits
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 class Protein:
@@ -36,7 +37,7 @@ class Protein:
         in_temp.write(f'>{self.name}\n{self.sequence}')
         in_temp.close()
         out_temp = make_temp_file(prefix='out_', close=True)
-        cmd = ["hmmscan", "-E", evalue, "--domE", evalue, "--domtblout", out_temp.name, pfamDB, in_temp.name]
+        cmd = ["hmmscan", "-E", str(evalue), "--domE", str(evalue), "--domtblout", out_temp.name, pfamDB, in_temp.name]
         # cmd2 = ['hmmscan', '--cut_ga', '--domtblout', out_temp.name, pfamDB, in_temp.name]
         cap = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         cap.communicate()
@@ -50,14 +51,14 @@ class Protein:
         self.hmm_profile(out_temp.name, scan_type='hmmscan')
         return out_temp.name
 
-    def identify_pfam(self, queue, pfamDB, evalue='1e-5'):
+    def identify_pfam(self, pfamDB, evalue='1e-5'):
         out_hmmscan = self._hmm_scan(pfamDB, evalue)
         os.unlink(out_hmmscan)
         # 通过进程池 Protein.domain 似乎无法更新，所以把结果put出来在进程池外再更新
-        queue.put((self.name, self.domain))
+        # queue.put((self.name, self.domain))
 
 
-class Proteome(list):
+class Proteome(dict):
     """
     存放蛋白质组
     """
@@ -75,12 +76,20 @@ class Proteome(list):
         fasta_seqs = gen_seqs_with_headers(self.file)
         for seqid, seq in fasta_seqs.items():
             seqid = seqid.split(" ")[0]  # 去除faa文件里的功能描述部分
-            for protein in self:  # protein是Protein对象
-                if protein.name == seqid:
-                    protein.sequence = seq
-            # 如果没有找到匹配的Protein，创建新的Protein并添加到proteins列表中
-            new_protein = Protein(name=seqid, sequence=seq)
-            self.append(new_protein)
+            # for protein in self:  # protein是Protein对象
+            #     if protein.name == seqid:
+            #         protein.sequence = seq
+            # # 如果没有找到匹配的Protein，创建新的Protein并添加到proteins列表中
+            # new_protein = Protein(name=seqid, sequence=seq)
+            # self.append(new_protein)
+            if seqid in self:
+                # 更新已存在的Protein对象
+                self[seqid].sequence = seq
+            else:
+                # 创建并添加新的Protein对象
+                new_protein = Protein(name=seqid, sequence=seq)
+                self[seqid] = new_protein
+
 
     def read_fasta(self, fasta_name, extract_ids):
         fasta_file = gen_seqs_with_headers(fasta_name, extract_ids)
@@ -88,12 +97,12 @@ class Proteome(list):
             for seqid, seq in fasta_file.items():
                 seqid = seqid.split(" ")[0]  # 去除faa文件里的功能描述部分
                 aProtein = Protein(name=seqid, sequence=seq)
-                self.append(aProtein)
+                self[seqid] = aProtein
         elif extract_ids:
             for seqid in fasta_file:
                 seqid = seqid.split(" ")[0]
                 aProtein = Protein(name=seqid)
-                self.append(aProtein)
+                self[seqid] = aProtein
         self.name = os.path.basename(fasta_name).replace('.faa', '')
         self.size = len(self)
 
@@ -121,7 +130,7 @@ class Proteome(list):
         for query, group in grouped_data:
             aProtein = Protein(name=str(query))
             aProtein.hmm_profile(group, 'mmseqs')
-            self.append(aProtein)
+            self[query] = aProtein
         os.remove(res)
         shutil.rmtree(tmp_dir)
         return
@@ -130,31 +139,46 @@ class Proteome(list):
         """
         搜索Pfam-A.hmm
         """
-        aQueue = Manager().Queue()
-        # 限制最大进程数，并使用 with 确保资源释放
-        with Pool(processes=threads) as processes:
-            for protein in self:
-                processes.apply_async(protein.identify_pfam, args=(aQueue, pfam_db, evalue))
-            identified_pfams = dict()
-            ntd = 0
-            while True:
+        # aQueue = Manager().Queue()
+        # # 限制最大进程数，并使用 with 确保资源释放
+        # with Pool(processes=threads) as processes:
+        #     for protein in self.values():
+        #         processes.apply_async(protein.identify_pfam, args=(aQueue, pfam_db, evalue))
+        #     identified_pfams = dict()
+        #     ntd = 0
+        #     while True:
+        #         try:
+        #             a = aQueue.get(timeout=None)  # 阻塞等待直到有结果可用
+        #             identified_pfams[a[0]] = a[1]
+        #             ntd += 1
+        #             if ntd == self.size:  # 当获取到的结果数量等于蛋白质序列数量时停止
+        #                 break
+        #         except Exception as e:
+        #             print(f"Error retrieving from queue: {e}")
+        #             break
+        # # 将识别出的Pfam域分配给对应的蛋白质对象
+        # for protein in self.values():
+        #     protein.domain = identified_pfams.get(protein.name, None)  # 使用 get 避免 KeyError
+
+        with ThreadPoolExecutor(max_workers=threads) as executor:
+            # 提交所有任务到线程池，并创建一个进度条
+            futures = {executor.submit(protein.identify_pfam, pfam_db, evalue):
+                           protein for protein in self.values()}
+            # 使用 tqdm 创建进度条
+            for future in as_completed(futures):
                 try:
-                    a = aQueue.get(timeout=None)  # 阻塞等待直到有结果可用
-                    identified_pfams[a[0]] = a[1]
-                    ntd += 1
-                    if ntd == self.size:  # 当获取到的结果数量等于蛋白质序列数量时停止
-                        break
+                    result = future.result()  # This will raise an exception if the function raised one
                 except Exception as e:
-                    print(f"Error retrieving from queue: {e}")
-                    break
-        # 将识别出的Pfam域分配给对应的蛋白质对象
-        for protein in self:
-            protein.domain = identified_pfams.get(protein.name, None)  # 使用 get 避免 KeyError
+                    print(f"Error processing {futures[future]}: {e}")
+            # 等待所有任务完成（虽然 as_completed 已经做了这个，但我们可以显式地处理）
+            for future in futures.keys():
+                future.result()
+
         return
 
     def write_out_pfam(self, out_dir):  # self是一个faa文件
         proteome_domain = defaultdict(lambda: defaultdict(list))
-        for protein in self:  # 每个orf
+        for protein in self.values():  # 每个orf
             domain_list = protein.domain
             if domain_list:
                 for domain_o in domain_list:
@@ -186,7 +210,7 @@ class Panproteome(list):
                 aProteome.read_fasta(fasta_name=faa_file, extract_ids=True)
                 json_data = FileOperator(f'{aProteome}.pfam', outdir, "json")
                 json_data.read()
-                for protein in aProteome:
+                for protein in aProteome.values():
                     protein: Protein
                     domain_list = []
                     for i in range(len(json_data.data[protein.name]['Domain'])):

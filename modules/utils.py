@@ -7,6 +7,10 @@ import sys
 import time
 from tempfile import NamedTemporaryFile
 import progressbar
+import glob
+from collections import Counter
+import os
+import numpy as np
 
 
 def timing():
@@ -209,3 +213,67 @@ def gen_seqs_with_headers(fn, extract_ids=False):
                 header = line[1:]
                 gene_ids.append(header)
         return gene_ids
+
+
+def count_da(data: dict):
+    none_domain = 0
+    da_list = list()
+    da_pfam_num = list()
+    lencov_list = list()
+    for p_dict in data.values():
+        da = p_dict['Domain']
+        if len(da) == 0:
+            none_domain += 1  # 记录有多少个没有注释到pfam的
+        else:
+            da_string = ','.join(sorted(da))
+            da_list.append(da_string)  # 所有da的list（DA组合）
+            da_pfam_num.append(len(da))  # da有多少种pfam组成
+            lencov = str(sum(p_dict['LenCov']))  # da的覆盖度
+            lencov_list.append(lencov)
+    domain_num_dict = Counter(da_list)  # 统计每种da的数量
+    da_pfam_num = Counter(da_pfam_num)
+    return none_domain, domain_num_dict, lencov_list, da_pfam_num
+
+
+def count_all_pfam(file_path):
+    pfam_files = glob.glob(os.path.join(file_path, '*.pfam'))
+    pfam_dict = dict()
+
+    for file in pfam_files:
+        with open(file, 'r') as f:
+            data = json.load(f)
+        pfam_dict.update(data)
+
+    # domain的计算
+    none_domain, domain_num_dict, lencov_list, da_pfam_num = count_da(pfam_dict)
+    len_domain = len(domain_num_dict.keys())
+    # 计算有多少序列没有pfam，每种da的数量，da的覆盖度
+    len_bins = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    bin_counts = np.histogram(lencov_list, bins=len_bins)[0]
+    total_count = len(lencov_list)
+
+    genes_num = len(pfam_dict.keys())
+    # 输出结果
+    print("=" * 50)
+    print(f"{'Summary of Genome Data':^50}")
+    print("=" * 50)
+    print(f'{"Genomes num:":<30} {len(pfam_files):>15}')  # 基因组数量
+    print(f'{"Seqs num:":<30} {genes_num:>15}')  # 基因数量
+    print(f'{"None pfam seqs num:":<30} {none_domain:>15}')  # 注释到None的序列数
+    print(f'{"Percentage of None Pfam sequences:":<30} {none_domain / genes_num * 100:>10.2f}%')  # None的百分比
+    print(f'{"DA type num:":<30} {len_domain:>15}')  # da的种类数
+
+    print("\n" + "=" * 50)
+    print(f"{'DA Composition':^50}")
+    print("=" * 50)
+    for key, value in da_pfam_num.items():  # DA的组成情况
+        print(f"{f'DA consisting of {key} PFAMs:':<40} {value:>10}")
+
+    print("\n" + "=" * 50)
+    print(f"{'Coverage Percentage by Range':^50}")
+    print("=" * 50)
+    for i in range(len(bin_counts)):
+        percentage = (bin_counts[i] / total_count) * 100
+        print(f'{len_bins[i]} ~ {len_bins[i + 1]:<15} {percentage:.2f}%')
+
+    print("=" * 50)
