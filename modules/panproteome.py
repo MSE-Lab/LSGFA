@@ -119,20 +119,21 @@ class Proteome(dict):
         mmseqs_cmd = subprocess.Popen(mmseqs_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         mmseqs_cmd.communicate()
 
-        # 处理mmseqs的结果
-        necessary_columns = ['query', 'target', 'qlen', 'qstart', 'qend']
-        grouped_data = pd.read_csv(res, sep='\t', header=None,
-                                   names=['query', 'target', 'qlen', 'qstart', 'qend',
-                                          'tlen', 'tstart', 'tend', 'alnlen', 'bits',
-                                          'evalue', 'gapopen', 'fident'],
-                                   usecols=necessary_columns).groupby('query')
+        if os.path.exists(res):
+            # 处理mmseqs的结果
+            necessary_columns = ['query', 'target', 'qlen', 'qstart', 'qend']
+            grouped_data = pd.read_csv(res, sep='\t', header=None,
+                                       names=['query', 'target', 'qlen', 'qstart', 'qend',
+                                              'tlen', 'tstart', 'tend', 'alnlen', 'bits',
+                                              'evalue', 'gapopen', 'fident'],
+                                       usecols=necessary_columns).groupby('query')
 
-        for query, group in grouped_data:
-            aProtein = Protein(name=str(query))
-            aProtein.hmm_profile(group, 'mmseqs')
-            self[query] = aProtein
-        os.remove(res)
-        shutil.rmtree(tmp_dir)
+            for query, group in grouped_data:
+                aProtein = Protein(name=str(query))
+                aProtein.hmm_profile(group, 'mmseqs')
+                self[query] = aProtein
+            os.remove(res)
+            shutil.rmtree(tmp_dir)
         return
 
     def search_pfam_domain(self, threads, pfam_db, evalue='1e-5'):

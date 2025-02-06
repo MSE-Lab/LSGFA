@@ -130,7 +130,7 @@ def split_clusters(filename, out_dir):
     return
 
 
-def none_mmseqs_cluster(input_file, mmseqs_out_dir, threads, sub_cc_dir, method, num, identity, coverage):
+def none_mmseqs_cluster(input_file, mmseqs_out_dir, threads, sub_cc_dir, identity, coverage):
     def mmseqs(input, out_dir, thread, id, cov):
         res = os.path.join(out_dir, f'unused_sequences_all_seqs.fasta')  # 比较结果的前缀
         mmseqs_cmd = ' '.join([
@@ -139,18 +139,9 @@ def none_mmseqs_cluster(input_file, mmseqs_out_dir, threads, sub_cc_dir, method,
             '-s', '7.5', '-e', '1.000E-05', '--threads', str(thread), '--min-seq-id', str(id/100), '-c', str(cov/100)])
         mmseqs_cmd = subprocess.Popen(mmseqs_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         mmseqs_cmd.communicate()
-        shutil.rmtree(os.path.join(out_dir, 'tmp'))
         return res
 
-    def mmseqs_search(input, out_dir, thread, method, sub_cc_dir, id, cov, num):
-        agroup = DomainGroup(input)  # cc文件
-        res = agroup.homology_search(input, out_dir, thread, method, num, id, cov)
-        agroup.handle_result(res, 'rbh')  # 处理blast结果
-        agroup.build_homology_graph(sub_cc_dir)  # 建立rbh
-        return res
+    result = mmseqs(input_file, mmseqs_out_dir, threads, identity, coverage)
+    split_clusters(result, sub_cc_dir)
+    shutil.rmtree(os.path.join(mmseqs_out_dir, 'tmp'))
 
-    if method == 'mmseqs-cluster':
-        result = mmseqs(input_file, mmseqs_out_dir, threads, identity, coverage)
-        split_clusters(result, sub_cc_dir)
-    elif method == 'mmseqs-search':
-        mmseqs_search(input_file, mmseqs_out_dir, threads, method, sub_cc_dir, identity, coverage, num)

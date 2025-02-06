@@ -16,7 +16,8 @@ import modules.none_mapping as mapping
 
 def get_parameters():
     parser = argparse.ArgumentParser(
-        description='This program can get the Pfam Network. ')
+        description='This program can get the Pfam Network.',
+        formatter_class=argparse.RawTextHelpFormatter)
 
     # 基本参数
     parser.add_argument(
@@ -54,6 +55,14 @@ def get_parameters():
         choices=['hmmscan', 'mmseqs-search'], default='hmmscan',  # 只允许这几个选项
         help='Select a method for blasting. default=hmmscan')
     parser.add_argument(
+        '-ssn',
+        choices=['1', '2', '3'], default='3',  # 只允许这几个选项
+        help='Select a method for build sequence similarity network (SSN).\n'
+             'default = 3\n'
+             '1 = Reciprocal best hit (RBH)\n'
+             '2 = Specify a reciprocal hit above the threshold (identity >= 40).\n'
+             '3 = reciprocal hits above the minimum reciprocal hit threshold.\n')
+    parser.add_argument(
         '-blast',
         choices=['diamond', 'mmseqs-search'], default='mmseqs-search',  # 只允许这几个选项
         help='Select a method for blasting. default=mmseqs-search')
@@ -66,6 +75,25 @@ def get_parameters():
     parser.add_argument(
         '-e', dest='evalue', default=1e-5,
         help='The coverage of homology search [0-1], default = 1e-5.')
+    parser.add_argument(
+        '-inflation', dest='inflation', default=1.5,
+        help='Inflation (varying this parameter affects granularity) [1.2-5.0], default = 1.5.')
+    parser.add_argument(
+        '-partition_type',
+        choices=['1', '2', '3', '4', '5'], default='4',  # 只允许这几个选项
+        help='Select a method for la.partition_type.\n'
+             'default = 4\n'
+             '1 = ModularityVertexPartition\n'
+             '2 = RBConfigurationVertexPartition\n'
+             '3 = RBERVertexPartition\n'
+             '4 = CPMVertexPartition\n'
+             '5 = SurpriseVertexPartition\n')
+    parser.add_argument(
+        '-rp', dest='resolution_parameter', default=0.9,
+        help='[0-1.0], default = 0.9.\n'
+             'Some methods accept resolution parameters,\n'
+             'such as RBConfigurationVertexPartition, RBERVertexPartition and CPMVertexPartition. \n'
+             'The larger the resolution_parameter, the more subgraphs will be obtained.')
 
     args = parser.parse_args()  # general options
     return args
@@ -82,39 +110,74 @@ def make_working_dir(output_dirs, delate=True):
     [os.makedirs(dir_, exist_ok=True) for dir_ in output_dirs]
 
 
-def work_flow(input_file, blast_out_dir, threads, sub_cc_dir, identity, coverage, method, num):
+def work_flow(input_file, blast_out_dir, threads, sub_cc_dir,  method, num, inflation, ssn):
     result_files = []
     agroup = DomainGroup(input_file)  # cc文件
-    result_file_path = os.path.join(blast_out_dir, f'{agroup.name}.txt')  # blast的结果
+    if len(agroup) <= 2:  # 如果只有两条序列，就不做blast和mcl了
+        abc_file = None
+        shutil.copyfile(input_file, os.path.join(sub_cc_dir, f'{agroup.name}_1.faa'))
+    else:
+        abc_file = os.path.join(blast_out_dir, f'{agroup.name}.abc')
 
-    if not os.path.exists(result_file_path):
-        if method == 'diamond':
-            agroup.make_db(blast_out_dir, threads)  # make db
-            split_files = agroup.split_file(blast_out_dir)
-            for split_file in split_files:
-                result_file = agroup.homology_search(split_file, blast_out_dir, threads, method, num, identity, coverage)
-                result_files.append(result_file)
-            agroup.merge_files(result_file_path, result_files)
-            if len(split_files) != 1:
-                for file in split_files + result_files:
-                    os.remove(file)
-        elif method == 'mmseqs-search':
-            result_file = agroup.homology_search(input_file, blast_out_dir, threads, method, num, identity, coverage)
-            result_files.append(result_file)
-    try:
-        agroup.handle_result(result_file_path, 'rbh')  # 处理blast结果
-    except FileNotFoundError as e:
-        print(f"Error: {e}. \n"
-              f"Some error happend, there is no {result_file}.")
-    agroup.build_homology_graph(sub_cc_dir)  # 建立rbh
+        if not os.path.exists(abc_file):
+            blast_res = os.path.join(blast_out_dir, f'{agroup.name}.txt')
+            if method == 'diamond':
+                agroup.make_db(blast_out_dir, threads)  # make db
+                split_files = agroup.split_file(blast_out_dir)
+                for split_file in split_files:
+                    result_file = agroup.homology_abc(split_file, blast_out_dir, threads, method, num)
+                    result_files.append(result_file)
+                agroup.merge_files(blast_res, result_files)
+                if len(split_files) != 1:
+                    for file in split_files + result_files:
+                        os.remove(file)
+            elif method == 'mmseqs-search':
+                result_file = agroup.homology_abc(input_file, blast_out_dir, threads, method, num)
+        try:
+            agroup.filter_abc(blast_res, abc_file, ssn)
+            agroup.mcl_identity(abc_file, blast_out_dir, threads, inflation=inflation)  # 处理blast结果
+        except FileNotFoundError as e:
+            print(f"Error: {e}. \n"
+                  f"Some error happend, there is no {result_file}.")
+        agroup.mcl_cc_file(sub_cc_dir)  # mcl聚类
 
 
-def parallel_workflow(faa_files, blast_out_dir, threads, sub_cc_dir, identity, coverage, method, num=None):
+# def work_flow(input_file, blast_out_dir, threads, sub_cc_dir, identity, coverage, method, num, inflation):
+#     result_files = []
+#     agroup = DomainGroup(input_file)  # cc文件
+#     if len(agroup) <= 2:  # 如果只有两条序列，就不做blast和mcl了
+#         result_file_path = None
+#         shutil.copyfile(input_file, os.path.join(sub_cc_dir, f'{agroup.name}_1.faa'))
+#     else:
+#         result_file_path = os.path.join(blast_out_dir, f'{agroup.name}.abc')
+#
+#         if not os.path.exists(result_file_path):
+#             if method == 'diamond':
+#                 agroup.make_db(blast_out_dir, threads)  # make db
+#                 split_files = agroup.split_file(blast_out_dir)
+#                 for split_file in split_files:
+#                     result_file = agroup.homology_abc(split_file, blast_out_dir, threads, method, num, identity, coverage)
+#                     result_files.append(result_file)
+#                 agroup.merge_files(result_file_path, result_files)
+#                 if len(split_files) != 1:
+#                     for file in split_files + result_files:
+#                         os.remove(file)
+#             elif method == 'mmseqs-search':
+#                 result_file_path = agroup.homology_abc(input_file, blast_out_dir, threads, method, num, identity, coverage)
+#         try:
+#             agroup.mcl_identity(result_file_path, blast_out_dir, threads, inflation=1.5)  # 处理blast结果
+#         except FileNotFoundError as e:
+#             print(f"Error: {e}. \n"
+#                   f"Some error happend, there is no {result_file}.")
+#         agroup.mcl_cc_file(sub_cc_dir)  # 建立rbh
+
+
+def parallel_workflow(faa_files, blast_out_dir, threads, sub_cc_dir, method, inflation, ssn, num=None):
     total_tasks = len(faa_files)  # 添加进度条
     make_working_dir([blast_out_dir, sub_cc_dir])
     with ThreadPoolExecutor(max_workers=threads) as executor:
         futures = {executor.submit(work_flow, faa, blast_out_dir, str(threads), sub_cc_dir,
-                                   str(identity), str(coverage), method, num): faa for faa in faa_files}
+                                   method, num, inflation, ssn): faa for faa in faa_files}
         with tqdm(total=total_tasks) as pbar:
             for future in as_completed(futures):
                 try:
@@ -126,9 +189,19 @@ def parallel_workflow(faa_files, blast_out_dir, threads, sub_cc_dir, identity, c
         # 等待所有任务完成（虽然 as_completed 已经做了这个，但我们可以显式地处理）
         for future in futures.keys():
             future.result()  # 确保每个任务都已完成，这里也会捕获异常
-    for dir_name in os.listdir(blast_out_dir):
-        if os.path.isdir(dir_name) and dir_name.startswith('tmp'):
-            shutil.rmtree(dir_name)
+
+    # 定义要删除的文件和目录的条件
+    delete_conditions = [lambda x: x.startswith('tmp'),
+                         lambda x: x.endswith('txt'),
+                         lambda x: x.endswith('dmnd')]
+
+    for item in os.listdir(blast_out_dir):
+        item_path = os.path.join(blast_out_dir, item)
+        if any(condition(item) for condition in delete_conditions):
+            if os.path.isdir(item_path):
+                shutil.rmtree(item_path)
+            elif os.path.isfile(item_path):
+                os.remove(item_path)
 
 
 class GeneGroup:
@@ -204,6 +277,10 @@ def main():
     identity = parameters.identity
     coverage = parameters.coverage
     evalue = parameters.evalue
+    inflation = float(parameters.inflation)
+    partition_type = parameters.partition_type
+    resolution_parameter = float(parameters.resolution_parameter)
+    ssn = parameters.ssn
 
     pfam_dir = os.path.join(OUT_DIR, 'pfam')  # 存放pfam注释结果
     graph_dir = os.path.join(OUT_DIR, 'graph')  # 按pfam建graph的信息
@@ -259,7 +336,8 @@ def main():
             message(text='Start puting graph file ...', label='PROCESS')
             pfam_graph.put_graph_file(graph_dir)  # 输出网络相关文件
             message(text='Start finding partition ...', label='PROCESS')
-            pfam_graph.la_find_partition(graph_dir, query_dir)  # 社区发现
+            pfam_graph.la_find_partition(graph_dir, query_dir, partition_type=partition_type,
+                                         resolution_parameter=resolution_parameter)  # 社区发现
             del pfam_graph  # 删除pfam_graph
     # 输出Pfam的相关统计信息
     count_all_pfam(pfam_dir)
@@ -268,6 +346,7 @@ def main():
     elif parameters.pg:
         message(text='Pfam graph search Done.', label='PROCESS')
     else:
+        message(text='Start clustering ...', label='PROCESS')
         with open(os.path.join(graph_dir, 'cc_infomation.txt'), 'r') as file:
             redundant_num = file.readline().rstrip().split(' ')[-1]
         unused_sequences_file = os.path.join(no_pfam, 'unused_sequences.faa')
@@ -277,18 +356,21 @@ def main():
         if not os.path.exists(unused_sequences_file):  # 如果还没有做mapping
             faa_files = sorted(glob.glob(os.path.join(query_dir, '*.fa')))
             parallel_workflow(faa_files, blast_dir, THREADS, sub_cc,
-                              identity, coverage, parameters.blast, redundant_num)  # cc内部
-
+                              parameters.blast, inflation, ssn, redundant_num)  # cc内部
             none_dict = gen_seqs_with_headers(os.path.join(no_pfam, 'none_pfam.fa'))  # none去mapping已有的cc
+            message(text='Start mapping ...', label='PROCESS')
             mapping.mapping_cc_flow(os.path.join(homo_dir, 'sub_cc'), no_pfam, none_dict,
                                     THREADS, redundant_num, parameters.blast)
-
+            message(text='Start clustering None Pfam sequences...', label='PROCESS')
         # 没有mapping的结果自己做组内cluster
             mapping.none_mmseqs_cluster(unused_sequences_file, no_pfam, THREADS,
-                                        sub_cc, 'mmseqs-cluster', redundant_num, identity, coverage)
+                                        sub_cc, identity, coverage)
 
-        for infile in glob.glob(os.path.join(blast_dir, '*.dmnd')):  # 删除diamond的db和mmseq的tmp
-            os.remove(infile)
+        # for infile in glob.glob(os.path.join(blast_dir, '*.dmnd')):  # 删除diamond的db和mmseq的tmp
+        #     os.remove(infile)
+        # for dir_name in os.listdir(blast_dir):
+        #     if os.path.isdir(dir_name) and dir_name.startswith('tmp_'):
+        #         shutil.rmtree(dir_name)
 
         # count_pangenome.py 统计泛基因组的信息
         object_list = cc_list(sub_cc, redundant_num, homo_dir)
