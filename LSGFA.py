@@ -136,10 +136,10 @@ def work_flow(input_file, blast_out_dir, threads, sub_cc_dir,  method, num, infl
         try:
             agroup.filter_abc(blast_res, abc_file, ssn)
             agroup.mcl_identity(abc_file, blast_out_dir, threads, inflation=inflation)  # 处理blast结果
+            agroup.mcl_cc_file(sub_cc_dir)  # mcl聚类
         except FileNotFoundError as e:
             print(f"Error: {e}. \n"
                   f"Some error happend, there is no {result_file}.")
-        agroup.mcl_cc_file(sub_cc_dir)  # mcl聚类
 
 
 # def work_flow(input_file, blast_out_dir, threads, sub_cc_dir, identity, coverage, method, num, inflation):

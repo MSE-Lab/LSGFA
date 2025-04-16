@@ -109,7 +109,9 @@ class DomainGroup:
                 result_list = pd.merge(df_sorted, max_values, on=['sgenome', 'query', 'identity'])
                 pair_counts_2 = result_list['pair'].value_counts()
                 valid_pairs_2 = pair_counts_2[pair_counts_2 == 2].index
-                final_results = result_list[result_list['pair'].isin(valid_pairs_2)]
+                final_results = pd.concat(
+                    [result_list[result_list['pair'].isin(valid_pairs_2)], df[df['query'] == df['subject']]])
+                # 保留自己比自己的
                 final_results[['query', 'subject', 'identity']].to_csv(res, sep='\t', index=False, header=False)
             elif ssn == '2':
                 # 固定阈值
