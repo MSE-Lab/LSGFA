@@ -11,6 +11,7 @@ import glob
 from collections import Counter
 import os
 import numpy as np
+import argparse
 
 
 def timing():
@@ -188,10 +189,18 @@ class CallCmd:
 def gen_seqs_with_headers(fn, extract_ids=False):
     with open(fn) as f:
         fh = f.readlines()
+
+    if not fh[0].startswith('>'):
+        message(text=f"'{fn}' is not a fasta file", label='Error')
+        exit(1)
+
     header = None
     seqs = []
     gene_seqs = dict()
     gene_ids = []
+    # extract_ids这个参数的意思是，是否仅提取ID
+    # False表示不仅仅提取ID，序列也要提取
+    # True表示仅仅提取ID，不提取序列
     if not extract_ids:
         for line in fh:
             line = line.strip()
@@ -277,3 +286,34 @@ def count_all_pfam(file_path):
         print(f'{len_bins[i]} ~ {len_bins[i + 1]:<15} {percentage:.2f}%')
 
     print("=" * 50)
+
+
+def validate_range(value, min_val, max_val, name):
+    """
+    验证值是否在指定范围内
+    :param value: 要验证的值
+    :param min_val: 最小值
+    :param max_val: 最大值
+    :param name: 参数名称（用于错误信息）
+    :return: 如果验证通过，返回原始值
+    :raises: argparse.ArgumentTypeError 如果值无效
+    """
+    try:
+        fvalue = float(value)
+    except ValueError:
+        message(text="'{value}' is not a valid number for {name}", label='Error')
+        exit(1)
+    else:
+        if not (min_val <= fvalue <= max_val):
+            message(text=f"{name} must be between {min_val} and {max_val} (got {fvalue})",
+                    label='Error')
+            exit(1)
+
+def validate_fasta_ids(seq_id, genome_id):
+    parts = seq_id.split('|')
+    if '|' not in seq_id or len(parts) != 2 or parts[0] != genome_id:
+        message(text=f"'{seq_id}' is not a valid id", label='Error')
+        print("Examples of valid IDs:")
+        print("  >Genome1|Gene001")
+        print("Please correct your FASTA files and try again")
+        sys.exit(1)

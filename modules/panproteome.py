@@ -93,17 +93,19 @@ class Proteome(dict):
 
     def read_fasta(self, fasta_name, extract_ids):
         fasta_file = gen_seqs_with_headers(fasta_name, extract_ids)
-        if not extract_ids:
+        self.name = os.path.basename(fasta_name).replace('.faa', '')
+        if not extract_ids: # 提取序列
             for seqid, seq in fasta_file.items():
                 seqid = seqid.split(" ")[0]  # 去除faa文件里的功能描述部分
+                validate_fasta_ids(seqid, self.name)
                 aProtein = Protein(name=seqid, sequence=seq)
                 self[seqid] = aProtein
-        elif extract_ids:
+        elif extract_ids: # 仅提取ID
             for seqid in fasta_file:
                 seqid = seqid.split(" ")[0]
+                validate_fasta_ids(seqid, self.name)
                 aProtein = Protein(name=seqid)
                 self[seqid] = aProtein
-        self.name = os.path.basename(fasta_name).replace('.faa', '')
         self.size = len(self)
 
     def search_mmseq_pfam_domain(self, mmseq_db, out_dir, threads, evalue=1e-5):
@@ -140,27 +142,6 @@ class Proteome(dict):
         """
         搜索Pfam-A.hmm
         """
-        # aQueue = Manager().Queue()
-        # # 限制最大进程数，并使用 with 确保资源释放
-        # with Pool(processes=threads) as processes:
-        #     for protein in self.values():
-        #         processes.apply_async(protein.identify_pfam, args=(aQueue, pfam_db, evalue))
-        #     identified_pfams = dict()
-        #     ntd = 0
-        #     while True:
-        #         try:
-        #             a = aQueue.get(timeout=None)  # 阻塞等待直到有结果可用
-        #             identified_pfams[a[0]] = a[1]
-        #             ntd += 1
-        #             if ntd == self.size:  # 当获取到的结果数量等于蛋白质序列数量时停止
-        #                 break
-        #         except Exception as e:
-        #             print(f"Error retrieving from queue: {e}")
-        #             break
-        # # 将识别出的Pfam域分配给对应的蛋白质对象
-        # for protein in self.values():
-        #     protein.domain = identified_pfams.get(protein.name, None)  # 使用 get 避免 KeyError
-
         with ThreadPoolExecutor(max_workers=threads) as executor:
             # 提交所有任务到线程池，并创建一个进度条
             futures = {executor.submit(protein.identify_pfam, pfam_db, evalue):
@@ -200,35 +181,53 @@ class Panproteome(list):
     def __init__(self, f, outdir, threads, db, method, evalue):
         super().__init__()
 
+        # 获取所有需要处理的faa文件列表
+        faa_files = sorted(glob.glob(os.path.join(f, '*.faa')))
+        empty_files = [f for f in faa_files if os.path.getsize(f) == 0]
+        if empty_files:
+            message(text="Empty FASTA files detected", label="Error")
+            for f in empty_files:
+                message(text=f"- {os.path.basename(f)}", label="FILE")
+            sys.exit(1)
+
+        # 判断已经完成的faa
         completed_proteomes = [os.path.splitext(os.path.basename(file))[0] for file in
                                glob.glob(os.path.join(outdir, '*.pfam'))]
         message(text=f"{len(completed_proteomes)} already processed. Skipping...", label='Information')
 
-        for faa_file in sorted(glob.glob(os.path.join(f, '*.faa'))):
-            aProteome = Proteome(fasta_name=faa_file)
-            self.append(aProteome)
-            if aProteome.name in completed_proteomes:
-                aProteome.read_fasta(fasta_name=faa_file, extract_ids=True)
-                json_data = FileOperator(f'{aProteome}.pfam', outdir, "json")
-                json_data.read()
-                for protein in aProteome.values():
-                    protein: Protein
-                    domain_list = []
-                    for i in range(len(json_data.data[protein.name]['Domain'])):
-                        pfam_id = json_data.data[protein.name]['Domain'][i]
-                        percent = json_data.data[protein.name]['LenCov'][i]
-                        domain_list.append(Pfam(pfam_id=pfam_id, percent=percent))
-                    protein.domain = domain_list
-            else:
-                message(text=f'identify Pfam for {aProteome.name}')
-                if method == 'hmmscan':
-                    aProteome.read_fasta(fasta_name=faa_file, extract_ids=False)
-                    aProteome.search_pfam_domain(threads=threads, pfam_db=db, evalue=evalue)
-                elif method == 'mmseqs-search':
+        # 创建进度条
+        with tqdm(total=len(faa_files), desc="Processing proteomes", unit="proteome") as pbar:
+            for faa_file in faa_files:
+                aProteome = Proteome(fasta_name=faa_file)
+                self.append(aProteome)
+
+                if aProteome.name in completed_proteomes:
+                    # 已处理过的逻辑
                     aProteome.read_fasta(fasta_name=faa_file, extract_ids=True)
-                    aProteome.search_mmseq_pfam_domain(mmseq_db=db, out_dir=outdir,
-                                                       threads=threads, evalue=evalue)
-                aProteome.write_out_pfam(out_dir=outdir)
+                    json_data = FileOperator(f'{aProteome}.pfam', outdir, "json")
+                    json_data.read()
+                    for protein in aProteome.values():
+                        protein: Protein
+                        domain_list = []
+                        for i in range(len(json_data.data[protein.name]['Domain'])):
+                            pfam_id = json_data.data[protein.name]['Domain'][i]
+                            percent = json_data.data[protein.name]['LenCov'][i]
+                            domain_list.append(Pfam(pfam_id=pfam_id, percent=percent))
+                        protein.domain = domain_list
+                    pbar.set_postfix_str(f"Skipped {aProteome.name}", refresh=False)
+                else:
+                    if method == 'hmmscan':
+                        aProteome.read_fasta(fasta_name=faa_file, extract_ids=False)
+                        aProteome.search_pfam_domain(threads=threads, pfam_db=db, evalue=evalue)
+                    elif method == 'mmseqs-search':
+                        aProteome.read_fasta(fasta_name=faa_file, extract_ids=True)
+                        aProteome.search_mmseq_pfam_domain(mmseq_db=db, out_dir=outdir,
+                                                           threads=threads, evalue=evalue)
+                    aProteome.write_out_pfam(out_dir=outdir)
+                    pbar.set_postfix_str(f"Processed {aProteome.name}", refresh=False)
+
+                # 更新进度条
+                pbar.update(1)
 
 
     def add_proteome_sequence(self):

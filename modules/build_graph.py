@@ -3,7 +3,6 @@ from itertools import combinations
 import igraph
 from modules import panproteome
 import leidenalg as la
-from collections import Counter
 from modules.utils import *
 
 warnings.filterwarnings("ignore")
@@ -171,8 +170,6 @@ class PGraph:
             genomes = [protein.name.split('|')[0] for protein in genes_in_community]
             genome_size = min(Counter(genomes).values())
             genome_len = len(set(genomes))
-            # if len(genes_in_community) > 3:
-            # partition_genes.append(genes_in_community)
 
             fasta = '\n'.join([f'>{protein.name}\n{protein.sequence}\n' for protein in genes_in_community])
             fasta_o = FileOperator(name=f'cc{cc_num:0>7}.fa', dir_=query_dir, data=fasta)
@@ -182,8 +179,6 @@ class PGraph:
             cc_id = f'cc{cc_num:0>7}'
             result += f'{cc_id}\t{cc_size}\t{pattern_num}\t{genome_len}\t{genome_size}\n'
             cc_num += 1
-        # # 输出cc的文件
-        # self.put_out_cc(partition_genes, query_dir)
         # 输出cc的信息
         with open(os.path.join(graph_dir, 'cc_infomation.txt'), 'w') as f_obj:
             f_obj.write(f'genomes number: {self.genomes_num}\n')

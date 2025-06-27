@@ -43,26 +43,6 @@ class DomainGroup:
         # shutil.rmtree(os.path.join(blast_dir, f'tmp_{self.name}'))
         return res
 
-    # def homology_abc(self, input_file, blast_dir, threads, method, num, identity=40, cover=50):
-    # 	blast_cmd = ''
-    # 	res = ''
-    # 	if method == 'diamond':
-    # 		# 进行ata blast
-    # 		res = os.path.join(blast_dir, f'result_{os.path.basename(input_file)}')  # 比较结果
-    # 		blast_cmd = ' '.join([
-    # 			'diamond', 'blastp', '--more-sensitive', '-p', str(threads), '-q', input_file, '-d', self.db,
-    # 			'--evalue 1e-5 --outfmt tab qseqid sseqid pident', '--out', res, '--query-cover', str(cover),
-    # 			'--subject-cover', str(cover), '-k', '0', '--id', str(identity)])
-    # 	elif method == 'mmseqs-search':
-    # 		res = os.path.join(blast_dir, f'{self.name}.abc')
-    # 		blast_cmd = ' '.join([
-    # 			'mmseqs', 'easy-search', input_file, self.file, res, os.path.join(blast_dir, f'tmp_{self.name}'),
-    # 			'-s', '7.5', '-e', '1.000E-05', '--threads', str(threads), '--max-seqs', str(num),
-    # 			'--min-seq-id', str(int(identity)/100), '-c', str(int(cover)/100),
-    # 			'--format-output', 'query,target,qlen'])
-    # 	blast_cap = subprocess.Popen(blast_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-    # 	blast_cap.communicate()
-    # 	return res
 
     def homology_abc(self, input_file, blast_dir, threads, method, num):
         # 因为在这里已经设定了覆盖度阈值和显著性阈值，故只保留identity的结果
@@ -221,11 +201,6 @@ class DomainGroup:
         del data
 
         if tag == 'rbh':  # cc内部的
-            # result_list = filtered_data.sort_values(by=['id', 'bitscore', 'evalue'],
-            # 										ascending=[False, False, True]).groupby(
-            # 	['query', 'sgenome']).head(1)[['query', 'subject']]
-            # result_list['pair'] = result_list.apply(lambda row: tuple(sorted([row['query'], row['subject']])), axis=1)
-            # rbh = [key for key, value in Counter(result_list['pair']).items() if value == 2]
             df_sorted = filtered_data.sort_values(by=['id', 'bitscore', 'evalue'], ascending=[False, False, True])
             max_values = df_sorted.groupby(['query', 'sgenome']).agg({
                 'id': 'max',
@@ -246,27 +221,6 @@ class DomainGroup:
         # 存放双向最优的配对结果
         self.rbh = rbh
 
-    def build_homology_graph(self, out_dir):  # 构建rbh网络
-        """
-        构建序列间的双向最优匹配网络
-        :param out_dir:输出目录
-        :return:子图列表
-        """
-        # message(text='Build homology graph...', label='PROCESS')
-        vs_list = list(self.content.keys())
-        cc_graph = Graph()
-        cc_graph.add_vertices(vs_list)  # 添加点
-        cc_graph.add_edges(self.rbh)  # 添加边
-        # cc_graph.write_gml(os.path.join(out_dir, f'{self.name}.gml'))
-
-        components_list = []  # 存放是sog的子图
-        components = cc_graph.components()  # 子图
-        for component in components:
-            subgraph = cc_graph.subgraph(component)
-            components_list.append(list(subgraph.vs['name']))
-        # message(text=f'{len(components_list)} sub-Pfam were found.', label='Information')
-        self.put_file(components_list, out_dir)  # 输出文件
-        return
 
     def put_file(self, components_list, out_dir):
         cc_num = 1
