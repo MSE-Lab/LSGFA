@@ -1,110 +1,159 @@
-## LSGFA简介
+# LSGFA: Domain-based large-scale prokaryotic genomic orthologous gene inference
+## Introduction
+LSGFA is a pan genome pipeline developed based on python (v3.9.16) to perform pangenomics studies on large-scale genomic datasets.
 
-`LSGFA`是基于python (v3.9.16)开发的程序包，针对大规模基因组数据集进行泛基因组学研究。
+In this pipeline, all proteins are first identified by Pfam structural domains, and then clustered according to the similarity of structural domain architectures (DA). Sequence similarity networks (SSN) are constructed in the clustered sequence groups, and the network structure features of the sequence groups are analyzed in order to determine the existence of subgroups Finally, the splitting of the sequence groups is completed.Pfam domain architectures of proteins was performed according to Pfam database (http://pfam.xfam.org/). For the identification results, the non-overlapping, longest domains were retained, for sequences that are not annotated to the Pfam domain, or for sequences where the total coverage of the Pfam domain does not exceed 60%, the DA result is recorded as None.
 
-本程序首先对所有蛋白进行 Pfam 结构域鉴定，再根据结构域的相似性聚类；然后在聚类序列群中构建序列相似性网络，逐个分析序列群的网络结构特征以判定子群是否存在；最后完成序列群的拆分。
+For similarity clustering between different DA, the sum of the percentage of the same domain in sequence between DAs is calculated, if the same domain percentage more than 50%, the standard is reached.Calculate the proportion of the number of sequences in two DAs that reached the standard in their respective total number of sequences is multiplied as the weight between DAs, and finally obtain the subgraph based on this network structure to get the cluster of clustered sequences.
 
-对蛋白进行 Pfam 结构域鉴定是使用hmmscan(3.3.2)根据[Pfam数据库(36.0)](http://pfam.xfam.org/)进行鉴定。对于鉴定得到结果，保留不重叠的，长度最长的Pfam，同时，如果一条序列上的Pfam所占长度不足该序列长度的60%，则抛弃这条序列的Pfam鉴定结果。
+## Installation
+Simply download the zip file for Linux and extract the contents to a folder of your choice to install and complete.
 
-在不同domain间进行相似性聚类时，如果两个domain有相同的Pfam，且相同的Pfam占序列长度自身序列长度的50%以上，则进行连线，同时计算两种domain间连线的权重，最后根据该网络结构获取子图，得到聚类序列群。
+```shell
+# Download 
+unzip lsgfa.zip -d /your_path
+conda env create -f LSGFA-env.yaml
+```
 
-## 依赖包
+ LSGFA has the following dependencies:
 
-- python-igraph (v0.10.5)
-- leidenalg (v0.10.0)
-- pyfasta (v0.5.2)
-- pandas (v2.0.3)
+### Required dependencies
+* [igraph · PyPI](https://pypi.org/project/igraph/)
+* [leidenalg · PyPI](https://pypi.org/project/leidenalg/)
+* [pandas · PyPI](https://pypi.org/project/pandas/)
+* [tqdm · PyPI](https://pypi.org/project/tqdm/)
+* [diamond](https://github.com/bbuchfink/diamond)
+* [MMseqs2](https://github.com/soedinglab/MMseqs2)
+* [HMMER](http://www.hmmer.org/)
+* [mcl](https://micans.org/mcl/)
 
-## 软件
-- blastp (v2.14.1)
-- diamond (v2.1.8.162)
-- hmmscan (v3.3.2)
+### Database
+* [Pfam](http://pfam.xfam.org/)
 
-## 数据库
-- Pfam (v36.0)
+Before running this program, please download the Pfam database.
 
-  在运行本程序前，请将 Pfam 数据库下载modules的database目录，解压后并进行本地化
+If using **hmmscan** to annotate Pfam, download the **Pfam-A.hmm.gz.**
 
-​		1. 进入[数据库页面](https://ftp.ebi.ac.uk/pub/databases/Pfam/releases/)查看要下载的数据库
+```shell
+# Download the Pfam database, as an example for v37.1
+wget ftp://ftp.ebi.ac.uk/pub/databases/Pfam/releases/Pfam37.1/Pfam-A.hmm.gz
+gzip -d Pfam-A.hmm.gz
+hmmpress Pfam-A.hmm
+```
 
-​		2. 将数据库下载到database目录内
+If using **MMseqs2** to annotate Pfam, download the **seed** database.
 
-​		3. 对数据库进行本地化
+```shell
+# Download the Pfam database using mmseqs2
+mmseqs databases Pfam-A.seed  pfam_dir/pfam  tmp --threads 10
+mmseqs createindex pfam tmp -k 5 -s 7
+```
 
-   ``` shell
-   # 下载Pfam36.0
-   wget ftp://ftp.ebi.ac.uk/pub/databases/Pfam/releases/Pfam36.0/Pfam-A.hmm.gz
-   # 解压数据库文件
-   gzip -d Pfam-A.hmm.gz
-   # 将数据库本地化
-   hmmpress Pfam-A.hmm
-   ```
+### Input file format
+Input proteome file in `fasta` format ending with `faa`.
 
+Proteome files require sequences to be named in `Genome_ID|Gene_ID` format.
 
-## 用法
+Example:
 
-1. 基于蛋白结构域的鉴定，获得结构域相似性的聚类结果
+```
+>GCA_018599755.1|ORF_00001
+MKLEFKKSISNKIIYTLGVLFIFLFLLGYFLPIGIDKVKSLSYSQFFFSSYTVATQLGFL
+LFSFVIAYFINKEYSNKNILFYKLIGDNIFTFFYKKVAVLFFECLVFIILSITIISIIYS
+DFSHYLLLIILFSLVILQYILVVGTISMVSPNILISLGISIVYWIGSVILVAINKNIFGI
+VAPFEASNTMYRAVEKILNNESTFMCPTEIINTVSFFVLLFIVNTIVLLLSRKRWLKIGM
+```
 
-   **生成帮助页面**    快速查看软件可用的命令行选项
+## Usage
 
-   ```python
-   python PGraph_cc.py -h
-   ```
-   **一般使用方法**
+The main program script is `LSGFA.py`
 
-   ```python
-   python PGraph_cc.py -i input_dir -o output_dir -t threads
-   ```
-   a. 根据结构域的相似性建立的网络见 `graph` 文件夹
-   - `cc_infomation.txt`：聚类结果的相关信息
-   - `node_genes.txt`：网络节点属性的文件
-   - `pfam_graph.gml`、`pfam_graph.txt`：网络结构的文件
+**Generate a help page**, a quick look at the command line options available to the software
 
-   b. 没有注释到 Pfam 的序列处理结果见 `none_pfam` 文件夹
+```
+python LSGFA.py -h 
 
-   - `none_pfam.fa`:没有注释到 Pfam 的序列
+optional arguments: 
+	-h, --help     ashow this help message
+	-i INPUT_DIR, --in INPUT_DIR
+	               The directory including all genome files
+	-o OUTPUT_DIR, --out OUTPUT_DIR
+	               Specify a output directory. default: ./
+	-f             Re-perform whole process(including pfam annotation)
+	-fg            Re-perform the graph search(not including pfam annotation)
+	-fb            Re-perform the homology search(blast)
+	--pfam         Stop at pfam annotation
+	--pg           Stop at DAgraph
+	-t THREADS, --threads THREADS
+	               Threads. default: 8
+	-db PFAM_DB    Pfam database path.
+	-search {hmmscan,mmseqs-search}
+                   Select a method for blasting. default=hmmscan-ssn {1,2,3}
+                   Select a method for build sequence similarity network (SSN).
+                   default = 3
+                       1 = Reciprocal best hit (RBH)
+                       2 = Specify a reciprocal hit above the threshold (identity >= 40).
+                       3 = reciprocal hits above the minimum reciprocal hit threshold.
+	-blast {diamond,mmseqs-search}
+                   Select a method for blasting. default=mmseqs-search
+	-id IDENTITY   The identity of easy-search for the sequence with DA of None.
+	               [0-100], default = 40.
+	-c COVERAGE    The coverage of homology easy-search for the sequence with DA of None.
+	               [0-100], default = 50.
+	-e EVALUE      The coverage of Pfam domain annotation.
+	               [0-1], default = 1e-5.
+	-inflation INFLATION  
+	               Inflation (varying this parameter affects granularity)
+	               [1.2-5.0], default = 1.5.
+	-partition_type {1,2,3,4,5}
+                   Select a method for la.partition_type.
+                   default = 4
+                        1 = ModularityVertexPartition
+                        2 = RBConfigurationVertexPartition
+                        3 = RBERVertexPartition
+                        4 = CPMVertexPartition
+                        5 = SurpriseVertexPartition
+	-rp RESOLUTION_PARAMETER
+                   [0-1.0], default = 0.9.
+                   Some methods accept resolution parameters,
+                   such as RBConfigurationVertexPartition, RBERVertexPartition and CPMVertexPartition. 
+                   The larger the resolution_parameter, the more subgraphs will be obtained.
 
-   c. 基因组的 Pfam 注释结果见 `pfam` 文件夹
-   d. 根据结构域相似性聚类的结果见 `query` 文件夹
+```
+## General method of use
 
-   **测试示例**
+```shell
+python LSGFA.py -i input_dir -o output_dir -t threads -db Pfam-A.hmm
+```
 
-   本程序内置了两个测试数据Staphylococcus和Streptomyces
+## Output
 
-   可选择其一对软件进行测试，保证软件可以顺利运行
+1. The network based on the similarity of DAs can be found in the `graph` folder.
 
-   ```python
-   python PGraph_cc.py -i /testdata/Streptomyces -o output_dir -t threads
-   ```
+- `cc_infomation.txt`: information about DA clustering results
 
-   
+- `node_genes.txt`: file of network node attributes
 
-2. 在聚类序列群中构建双向最优的网络，分析每个序列群的网络结构特征，完成序列群的拆分
+- `pfam_graph.gml`, `pfam_graph.txt`: files for network structure
 
-   这一部分用于处理结构域相似性聚类的结果，输入文件为 .fa 结尾的文件
+2. The subnetworks obtained from DA clustering are shown in the `graph_cc` folder.
 
-   如果使用的是PGraph_cc.py的结果，输入目录应该是query目录
+3. Clustering results for subnetworks are available in the `homology_search' folder.
 
-   **生成帮助页面**    快速查看软件可用的命令行选项
+- `blast`: blast results and ABC files for subnetworks
 
-   ```python
-   python Pfam_cc.py -h
-   ```
-   **一般使用方法**
+- `sub_cc`: subgraphs obtained after mcl clustering of subnetworks
 
-   ```python
-   python Pfam_cc.py -i input_file -o out_dir -t threads
-   ```
+- `sub_cc_list.txt`: list of sequences within each subgraph
 
-   如果有多个需要处理的文件
-   ```python
-   python Pfam_cc.py -dir input_dir -o out_dir -t threads
-   ```
+4. The results of processing sequences with DA of None can be found in the `none_pfam` folder.
 
-   计算结果见指定的输出文件夹，包括：
+- `none_pfam.fa`: sequences with DA of None
 
-   ​	a. `sub_cc`：子家族的文件
+5. The pangenomic taxonomic position of each OG is shown in the `pangenome` folder.
 
-   ​	b. `blast`:聚类序列群进行blast的结果
+6. Pfam annotation results for the genome are available in the `pfam` folder.
 
-   ​	c. `cc_list.txt`：子家族的列表
+## License
+
+LSGFA is free software, licensed under GPLv3.

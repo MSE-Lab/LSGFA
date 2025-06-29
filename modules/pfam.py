@@ -21,19 +21,22 @@ class Hits(list):
     对hit进行筛选，保留不重叠的，长度最长的hit结果
     """
 
-    def __init__(self, hmmscan_out: str = ""):
+    def __init__(self, scan_out, scan_type):
         super().__init__()
         self.raw = []
-        self._handle_raw(hmmscan_out)
+        if scan_type == 'hmmscan':
+            self._handle_hmm(scan_out)
+        elif scan_type == 'mmseqs':
+            self._handle_mmseqs(scan_out)
         self.ana_relations()
         self.sum_percent()
 
-    def _handle_raw(self, hmmscan_out):
+    def _handle_hmm(self, scan_out):
         """
         处理每条蛋白序列hmmscan的结果
-        :param hmmscan_out: hmmscan的结果
+        :param scan_out: hmmscan的结果
         """
-        with open(hmmscan_out) as f:
+        with open(scan_out) as f:
             content = f.readlines()  # hits是一个list，存放读取未处理的内容
             hits = [i for i in content if not i.startswith("#")]
 
@@ -44,6 +47,21 @@ class Hits(list):
             pfam_end = int(split_line[18])
             pfam_hit_length = pfam_end - pfam_start + 1
             seq_len = int(split_line[5])
+            pfam_percent = pfam_hit_length / seq_len
+            aPfam = Pfam(pfam_id=pfam_id,
+                         start=pfam_start,
+                         end=pfam_end,
+                         hit_len=pfam_hit_length,
+                         percent=pfam_percent)
+            self.raw.append(aPfam)
+
+    def _handle_mmseqs(self, scan_out):
+        for index, row in scan_out.iterrows():
+            pfam_id = row['target']
+            seq_len = int(row['qlen'])
+            pfam_start = int(row['qstart'])
+            pfam_end = int(row['qend'])
+            pfam_hit_length = pfam_end - pfam_start + 1
             pfam_percent = pfam_hit_length / seq_len
             aPfam = Pfam(pfam_id=pfam_id,
                          start=pfam_start,

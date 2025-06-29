@@ -3,7 +3,6 @@ from itertools import combinations
 import igraph
 from modules import panproteome
 import leidenalg as la
-from collections import Counter
 from modules.utils import *
 
 warnings.filterwarnings("ignore")
@@ -61,7 +60,7 @@ class PGraph:
         domain_dict = {}
         protein_num = 0
         for proteome in proteomes:
-            for protein in proteome:  # 对protein重新分类，实例化DomainType
+            for protein in proteome.values():  # 对protein重新分类，实例化DomainType
                 protein_num += 1
                 if sum([i.percent for i in protein.domain]) <= 0.6:  # 在长度上判断
                     pfam_ = "None"
@@ -81,9 +80,7 @@ class PGraph:
             else:  # 对于有注释的内容，建立图
                 aDomainType = DomainType(name=pfam_type, proteins=proteins)
                 self.domain_type.append(aDomainType)
-
-        message(text=f"Genes number: {protein_num}", label='Information')
-        message(text=f"None pfam genes number: {len(domain_dict['None'])}", label='Information')
+        message(text=f'gene numbers: {protein_num}')
         message(text=f"DomainType number: {len(self.domain_type)}", label='Information')
         self._get_edges()  # 获取边的信息
 
@@ -140,12 +137,27 @@ class PGraph:
         node_data = FileOperator('node_genes.txt', graph_dir, data=result)
         node_data.write()
 
-    def la_find_partition(self, graph_dir, query_dir):  # 社区发现
-        partition = la.find_partition(self.graph, partition_type=la.CPMVertexPartition,
-                                      weights='weight',
-                                      resolution_parameter=0.9)
+    def la_find_partition(self, graph_dir, query_dir, partition_type, resolution_parameter=0.9):  # 社区发现
+        if partition_type == '1':
+            partition = la.find_partition(self.graph, partition_type=la.ModularityVertexPartition,
+                                          weights='weight')
+        elif partition_type == '2':
+            partition = la.find_partition(self.graph, partition_type=la.RBConfigurationVertexPartition,
+                                          weights='weight',
+                                          resolution_parameter=resolution_parameter)
+        elif partition_type == '3':
+            partition = la.find_partition(self.graph, partition_type=la.RBERVertexPartition,
+                                          weights='weight',
+                                          resolution_parameter=resolution_parameter)
+        elif partition_type == '4':
+            partition = la.find_partition(self.graph, partition_type=la.CPMVertexPartition,
+                                          weights='weight',
+                                          resolution_parameter=resolution_parameter)
+        elif partition_type == '5':
+            partition = la.find_partition(self.graph, partition_type=la.SurpriseVertexPartition,
+                                          weights='weight')
+
         message(text=f"Partition number: {len(partition)}", label='Information')
-        partition_genes = []
         result = ''
         cc_num = 0
         for community in partition:  # 获取每个社区内的蛋白
@@ -158,10 +170,8 @@ class PGraph:
             genomes = [protein.name.split('|')[0] for protein in genes_in_community]
             genome_size = min(Counter(genomes).values())
             genome_len = len(set(genomes))
-            # if len(genes_in_community) > 3:
-            # partition_genes.append(genes_in_community)
 
-            fasta = '\n'.join([f'>{protein.name}\n{protein.sequence}' for protein in genes_in_community])
+            fasta = '\n'.join([f'>{protein.name}\n{protein.sequence}\n' for protein in genes_in_community])
             fasta_o = FileOperator(name=f'cc{cc_num:0>7}.fa', dir_=query_dir, data=fasta)
             fasta_o.write()
 
@@ -169,20 +179,9 @@ class PGraph:
             cc_id = f'cc{cc_num:0>7}'
             result += f'{cc_id}\t{cc_size}\t{pattern_num}\t{genome_len}\t{genome_size}\n'
             cc_num += 1
-        # # 输出cc的文件
-        # self.put_out_cc(partition_genes, query_dir)
         # 输出cc的信息
         with open(os.path.join(graph_dir, 'cc_infomation.txt'), 'w') as f_obj:
             f_obj.write(f'genomes number: {self.genomes_num}\n')
             title = 'cc_id\tcc_size\tpattern_num\tgenome_len\tgenome_size\n'
             f_obj.write(title)
             f_obj.write(result)
-
-    @staticmethod
-    def put_out_cc(partition_genes, out_dir):
-        cc_num = 0
-        for partition in partition_genes:
-            fasta = '\n'.join([f'>{protein.name}\n{protein.sequence}' for protein in partition])
-            fasta_o = FileOperator(name=f'cc{cc_num:0>7}.fa', dir_=out_dir, data=fasta)
-            fasta_o.write()
-            cc_num += 1

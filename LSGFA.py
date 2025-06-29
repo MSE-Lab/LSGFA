@@ -12,22 +12,28 @@ from modules.homology_search import *
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 import modules.none_mapping as mapping
-
-global OUT_DIR, THREADS
+import sys
+from modules.check_software import check_software_installation
+from modules.logs import *
 
 
 def get_parameters():
     parser = argparse.ArgumentParser(
-        description='This program can get the Pfam Network. ')
+        description='LSGFA: Based on the fact that proteins are usually composed of multiple domains, '
+                    'construct a protein domain architecture graph for primary clustering, '
+                    'and then perform sequence alignment within the subnetwork to '
+                    'complete exact matching and find orthologous genomes.',
+        formatter_class=argparse.RawTextHelpFormatter)
 
-    # PGraph.py部分的参数
+    # 基本参数
     parser.add_argument(
-        '-i', '--in', type=str, dest='input_dir', default=False,
+        '-i', '--in', type=str, dest='input_dir', required=True,
         help='The directory including all genome files')
     parser.add_argument(
-        '-o', '--out', type=str, dest='output_dir', default=os.getcwd(),
-        help=f'Specify a output directory default: {os.getcwd()}')
+        '-o', '--out', type=str, dest='output_dir', default=os.path.join(os.getcwd(),'result'),
+        help=f'Specify a output directory default: ./result')
 
+    # 重做参数
     parser.add_argument('-f', action='store_true',
                         help='Re-perform whole process(including pfam annotation)')
     parser.add_argument('-fg', action='store_true',
@@ -35,32 +41,93 @@ def get_parameters():
     parser.add_argument("-fb", action="store_true",
                         help="Re-perform the homology search(blast)")
 
+    # 停断参数
     parser.add_argument('--pfam', action='store_true',
                         help='Stop at pfam annotation)')
     parser.add_argument('--pg', action='store_true',
                         help='Stop at pfam graph search')
 
-    parser.add_argument('-r', action='store_true',
-                        help='Run deduplication')
+    # 个性化参数
     parser.add_argument(
         '-t', '--threads', type=int, dest='threads', default=8,
         help='Hmmscan threads. default: 8')
-
-    # Pfam_cc.py部分的参数
+    parser.add_argument(
+        '-db', dest='pfam_db', required=True,
+        help="Database path (required). Format depends on -search: "
+             "For hmmscan: Pfam-A.hmm file path; "
+             "For mmseqs: pfam directory path")
+    parser.add_argument(
+        '-search',
+        choices=['hmmscan', 'mmseqs-search'], default='hmmscan',  # 只允许这几个选项
+        help='Select a method for blasting. default=hmmscan')
+    parser.add_argument(
+        '-ssn',
+        choices=['1', '2', '3'], default='3',  # 只允许这几个选项
+        help='Select a method for build sequence similarity network (SSN).\n'
+             'default = 3\n'
+             '1 = Reciprocal best hit (RBH)\n'
+             '2 = Specify a reciprocal hit above the threshold (identity >= 40).\n'
+             '3 = reciprocal hits above the minimum reciprocal hit threshold.\n')
     parser.add_argument(
         '-blast',
-        choices=['diamond', 'mmseqs-search'],  # 只允许这几个选项
-        help='Select a method for blasting.')
+        choices=['diamond', 'mmseqs-search'], default='mmseqs-search',  # 只允许这几个选项
+        help='Select a method for blasting. default=mmseqs-search')
     parser.add_argument(
         '-id', dest='identity', type=int, default=40,
-        help='The identity of homology search [0-100], default = 40.')
+        help='The identity of easy-search for the sequence with DA of None.'
+             ' [0-100], default = 40.')
     parser.add_argument(
         '-c', dest='coverage', type=int, default=50,
-        help='The coverage of homology search [0-100], default = 50.')
-    # parser.add_argument("--no_cc_output", action="store_true",
-    #                     help="Do not output cc file")
+        help='The coverage of homology easy-search for the sequence with DA of None.'
+             ' [0-100], default = 50.')
+    parser.add_argument(
+        '-e', dest='evalue', default=1e-5,
+        help='The coverage of Pfam domain annotation.'
+             ' [0-1], default = 1e-5.')
+    parser.add_argument(
+        '-inflation', dest='inflation', default=1.5,
+        help='Inflation (varying this parameter affects granularity) [1.2-5.0], default = 1.5.')
+    parser.add_argument(
+        '-partition_type',
+        choices=['1', '2', '3', '4', '5'], default='4',  # 只允许这几个选项
+        help='Select a method for la.partition_type.\n'
+             'default = 4\n'
+             '1 = ModularityVertexPartition\n'
+             '2 = RBConfigurationVertexPartition\n'
+             '3 = RBERVertexPartition\n'
+             '4 = CPMVertexPartition\n'
+             '5 = SurpriseVertexPartition\n')
+    parser.add_argument(
+        '-rp', dest='resolution_parameter', default=0.9,
+        help='[0-1.0], default = 0.9.\n'
+             'Some methods accept resolution parameters,\n'
+             'such as RBConfigurationVertexPartition, RBERVertexPartition and CPMVertexPartition. \n'
+             'The larger the resolution_parameter, the more subgraphs will be obtained.')
+
+    if len(sys.argv) == 1: # 当没有参数输入时
+        parser.print_help()  # 显示帮助信息
+        sys.exit(0)
 
     args = parser.parse_args()  # general options
+
+    # 一些参数判断和处理
+    if not os.path.isfile(args.pfam_db):  # 判断db是否存在
+        message(text=f'Pfam database file not found: {args.pfam_db}', label='Error')
+        sys.exit(1)
+    if args.search == 'hmmscan':  # 检查database和所选的软件是否对应
+        if not os.path.basename(args.pfam_db).endswith("hmm"):
+            message(text=f'Expected database file name: Pfam-A.hmm', label='Warning')
+            sys.exit(1)
+    elif args.search == 'mmseqs-search':
+        if os.path.basename(args.pfam_db).endswith('hmm'):
+            message(text=f'Please check your database.', label='Warning')
+            sys.exit(1)
+    # 判断参数值是否在区间内
+    validate_range(args.identity,0,100,'identity')
+    validate_range(args.coverage,0,100,'coverage')
+    validate_range(args.evalue,0,1,'evalue')
+    validate_range(args.inflation,1.2,5.0,'inflation')
+    validate_range(args.resolution_parameter,0,1,'resolution_parameter')
     return args
 
 
@@ -75,35 +142,44 @@ def make_working_dir(output_dirs, delate=True):
     [os.makedirs(dir_, exist_ok=True) for dir_ in output_dirs]
 
 
-def work_flow(input_file, blast_out_dir, threads, sub_cc_dir, identity, coverage, method, num):
+def work_flow(input_file, blast_out_dir, threads, sub_cc_dir,  method, num, inflation, ssn):
     result_files = []
     agroup = DomainGroup(input_file)  # cc文件
-    result_file_path = os.path.join(blast_out_dir, f'{agroup.name}.txt')  # blast的结果
+    if len(agroup) <= 2:  # 如果只有两条序列，就不做blast和mcl了
+        abc_file = None
+        shutil.copyfile(input_file, os.path.join(sub_cc_dir, f'{agroup.name}_1.faa'))
+    else:
+        abc_file = os.path.join(blast_out_dir, f'{agroup.name}.abc')
 
-    if not os.path.exists(result_file_path):
-        if method == 'diamond':
-            agroup.make_db(blast_out_dir, threads)  # make db
-            split_files = agroup.split_file(blast_out_dir)
-            for split_file in split_files:
-                result_file = agroup.homology_search(split_file, blast_out_dir, threads, method, num, identity, coverage)
-                result_files.append(result_file)
-            agroup.merge_files(result_file_path, result_files)
-            if len(split_files) != 1:
-                for file in split_files + result_files:
-                    os.remove(file)
-        elif method == 'mmseqs-search':
-            result_file = agroup.homology_search(input_file, blast_out_dir, threads, method, num, identity, coverage)
-            result_files.append(result_file)
-    agroup.handle_result(result_file_path, 'rbh')  # 处理blast结果
-    agroup.build_homology_graph(sub_cc_dir)  # 建立rbh
+        if not os.path.exists(abc_file):
+            blast_res = os.path.join(blast_out_dir, f'{agroup.name}.txt')
+            if method == 'diamond':
+                agroup.make_db(blast_out_dir, threads)  # make db
+                split_files = agroup.split_file(blast_out_dir)
+                for split_file in split_files:
+                    result_file = agroup.homology_abc(split_file, blast_out_dir, threads, method, num)
+                    result_files.append(result_file)
+                agroup.merge_files(blast_res, result_files)
+                if len(split_files) != 1:
+                    for file in split_files + result_files:
+                        os.remove(file)
+            elif method == 'mmseqs-search':
+                result_file = agroup.homology_abc(input_file, blast_out_dir, threads, method, num)
+        try:
+            agroup.filter_abc(blast_res, abc_file, ssn)
+            agroup.mcl_identity(abc_file, blast_out_dir, threads, inflation=inflation)  # 处理blast结果
+            agroup.mcl_cc_file(sub_cc_dir)  # mcl聚类
+        except FileNotFoundError as e:
+            print(f"Error: {e}. \n"
+                  f"Some error happend, there is no {result_file}.")
 
 
-def parallel_workflow(faa_files, blast_out_dir, threads, sub_cc_dir, identity, coverage, method, num = None):
+def parallel_workflow(faa_files, blast_out_dir, threads, sub_cc_dir, method, inflation, ssn, num=None):
     total_tasks = len(faa_files)  # 添加进度条
     make_working_dir([blast_out_dir, sub_cc_dir])
     with ThreadPoolExecutor(max_workers=threads) as executor:
         futures = {executor.submit(work_flow, faa, blast_out_dir, str(threads), sub_cc_dir,
-                                   str(identity), str(coverage), method, num): faa for faa in faa_files}
+                                   method, num, inflation, ssn): faa for faa in faa_files}
         with tqdm(total=total_tasks) as pbar:
             for future in as_completed(futures):
                 try:
@@ -116,12 +192,19 @@ def parallel_workflow(faa_files, blast_out_dir, threads, sub_cc_dir, identity, c
         for future in futures.keys():
             future.result()  # 确保每个任务都已完成，这里也会捕获异常
 
-    # 遍历指定目录中的所有项
+    # 定义要删除的文件和目录的条件
+    delete_conditions = [lambda x: x.startswith('tmp'),
+                         lambda x: x.endswith('txt'),
+                         lambda x: x.endswith('dmnd')]
+
     for item in os.listdir(blast_out_dir):
         item_path = os.path.join(blast_out_dir, item)
-        # 检查是否为目录且以'tmp'开头
-        if item.startswith('tmp'):
-            shutil.rmtree(item_path)  # 删除该目录及其内容
+        if any(condition(item) for condition in delete_conditions):
+            if os.path.isdir(item_path):
+                shutil.rmtree(item_path)
+            elif os.path.isfile(item_path):
+                os.remove(item_path)
+
 
 class GeneGroup:
     """
@@ -187,7 +270,6 @@ def put_out_file(object_list, out_dir):
 
 @time_used(f"[{timing()}]Whole processing Done")
 def main():
-    global OUT_DIR, THREADS
     # general options
     parameters = get_parameters()
     input_genomes_dir = parameters.input_dir
@@ -196,14 +278,36 @@ def main():
 
     identity = parameters.identity
     coverage = parameters.coverage
+    evalue = parameters.evalue
+    inflation = float(parameters.inflation)
+    partition_type = parameters.partition_type
+    resolution_parameter = float(parameters.resolution_parameter)
+    ssn = parameters.ssn
 
-    # PG.py
     pfam_dir = os.path.join(OUT_DIR, 'pfam')  # 存放pfam注释结果
     graph_dir = os.path.join(OUT_DIR, 'graph')  # 按pfam建graph的信息
     query_dir = os.path.join(OUT_DIR, 'graph_cc')  # pfam分出来
     no_pfam = os.path.join(OUT_DIR, 'none_pfam')  # 未注释到pfam信息的处理结果
     homo_dir = os.path.join(OUT_DIR, 'homology_search')  # 使用blast对cc进一步拆分
     pangenome_dir = os.path.join(OUT_DIR, 'pangenome')  # pangenome信息
+
+    # log文件
+    logger = setup_logger(log_dir=os.path.join(OUT_DIR, 'Log'), log_level=logging.INFO, log_to_console=True)
+    # 设置全局异常处理
+    sys.excepthook = lambda exc_type, exc_value, exc_traceback: log_exception(
+        logger, exc_type, exc_value, exc_traceback)
+    # 记录系统信息
+    log_command_line_args(logger, parameters)
+    log_software_versions(logger)
+
+    logger.info("Check required software.")
+    try:
+        check_software_installation()
+        message(text="All required software found. Starting analysis...", label='PROCESS')
+    except Exception as e:
+        logger.error({str(e)})
+        logger.exception("Exception details:")  # 记录完整堆栈跟踪
+        raise
 
     # 判断是否进行重做
     if parameters.fg:  # 从PGraph重做
@@ -227,39 +331,73 @@ def main():
                        homo_dir, pangenome_dir]
         make_working_dir(output_dirs, delate=False)
 
-    max_genome = len([file for file in os.listdir(input_genomes_dir) if file.split(".")[-1] == 'faa'])
-    message(text=f'genomes Numbers: {max_genome}', label='Information')
+    logger.info(f"Input genomes dir: {input_genomes_dir}")
+    try:
+        max_genome = len([file for file in os.listdir(input_genomes_dir) if file.split(".")[-1] == 'faa'])
+        message(text=f'genomes Numbers: {max_genome}', label='Information')
+        # 添加基因组数量检查
+        if max_genome < 3:
+            message(text='At least 3 genome files (.faa) are required', label='ERROR')
+            sys.exit(0)  # 非零退出码表示错误退出
+    except Exception as e:
+        logger.error({str(e)})
+        logger.exception("Exception details:")  # 记录完整堆栈跟踪
+        raise
 
     if not os.path.exists(os.path.join(graph_dir, 'cc_infomation.txt')):  # 如果按pfam划分这一步已经做完了
-        pp = Panproteome(input_genomes_dir)  # 初始化
-        message(text=f'Start with PFAM annotation ...', label='PROCESS')
-        pp.put_pfam_file(threads=THREADS, outdir=pfam_dir)  # pfam注释
-        if parameters.r:
-            message(text=f"Run deduplication.", label='PROCESS')
-            pp = pp.remove_redundant_sequences(outdir=OUT_DIR)
-        message(text=f"After removing the redundancy, there are {len(pp)} genomes left.", label='Information')
+        logger.info(f"PFAM doamin annotation.")
+        try:
+            pp = Panproteome(input_genomes_dir, pfam_dir, THREADS, parameters.pfam_db, parameters.search, evalue)  # 初始化及pfam注释
+            message(text=f'Start with PFAM annotation ...', label='PROCESS')
+        except Exception as e:
+            logger.error({str(e)})
+            logger.exception("Exception details:")  # 记录完整堆栈跟踪
+            raise
         if parameters.pfam:
             message(text='Pfam annotate Done.', label='PROCESS')
-        else:
+            sys.exit(0)
+        logger.info(f"DAGraph.")
+        try:
             # 输出domain聚类的cc
+            message(text='Start adding sequences ...', label='PROCESS')
+            pp.add_proteome_sequence()
             message(text=f'Start building the graph ...', label='PROCESS')
             pfam_graph = PGraph(pp, no_pfam)  # 初始化，提出需要做blast的文件
             del pp  # 删除pp释放内存
+        except Exception as e:
+            logger.error({str(e)})
+            logger.exception("Exception details:")  # 记录完整堆栈跟踪
+            raise
 
+        logger.info(f"DAGraph.")
+        try:
+            message(text='Start generating graph ...', label='PROCESS')
             pfam_graph.generate_graph()  # 构建网络
+            message(text='Start puting graph file ...', label='PROCESS')
             pfam_graph.put_graph_file(graph_dir)  # 输出网络相关文件
-            pfam_graph.la_find_partition(graph_dir, query_dir)  # 社区发现
+            message(text='Start finding partition ...', label='PROCESS')
+            pfam_graph.la_find_partition(graph_dir, query_dir, partition_type=partition_type,
+                                         resolution_parameter=resolution_parameter)  # 社区发现
             del pfam_graph  # 删除pfam_graph
+        except Exception as e:
+            logger.error({str(e)})
+            logger.exception("Exception details:")  # 记录完整堆栈跟踪
+            raise
 
-    with open(os.path.join(graph_dir, 'cc_infomation.txt'), 'r') as file:
-        redundant_num = file.readline().rstrip().split(' ')[-1]
-
+    # 输出Pfam的相关统计信息
+    count_all_pfam(pfam_dir)
     if parameters.pfam:
         message(text='Pfam annotate Done.', label='PROCESS')
-    elif parameters.pg:
+        sys.exit(0)
+    if parameters.pg:
         message(text='Pfam graph search Done.', label='PROCESS')
-    else:
-        # Pfam_cc.py
+        sys.exit(0)
+
+    logger.info(f"SSN cluster.")
+    try:
+        message(text='Start clustering ...', label='PROCESS')
+        with open(os.path.join(graph_dir, 'cc_infomation.txt'), 'r') as file:
+            redundant_num = file.readline().rstrip().split(' ')[-1]
         unused_sequences_file = os.path.join(no_pfam, 'unused_sequences.faa')
         blast_dir = os.path.join(homo_dir, 'blast')
         sub_cc = os.path.join(homo_dir, 'sub_cc')
@@ -267,23 +405,27 @@ def main():
         if not os.path.exists(unused_sequences_file):  # 如果还没有做mapping
             faa_files = sorted(glob.glob(os.path.join(query_dir, '*.fa')))
             parallel_workflow(faa_files, blast_dir, THREADS, sub_cc,
-                              identity, coverage, parameters.blast, redundant_num)  # cc内部
-
-            none_dict = gen_seqs_with_headers(os.path.join(no_pfam, 'none_pfam.fa'))  # none去mapping已有的cc
-            mapping.mapping_cc_flow(os.path.join(homo_dir, 'sub_cc'), no_pfam, none_dict,
-                                    THREADS, redundant_num, parameters.blast)
-
-        # 没有mapping的结果自己做组内cluster
-            mapping.none_mmseqs_cluster(unused_sequences_file, no_pfam, THREADS,
-                                        sub_cc, 'mmseqs-cluster', redundant_num, identity, coverage)
-
-        for infile in glob.glob(os.path.join(blast_dir, '*.dmnd')):  # 删除diamond的db
-            os.remove(infile)
-
+                              parameters.blast, inflation, ssn, redundant_num)  # cc内部
+            if os.path.exists(os.path.join(no_pfam, 'none_pfam.fa')):
+                none_dict = gen_seqs_with_headers(os.path.join(no_pfam, 'none_pfam.fa'))  # none去mapping已有的cc
+                message(text='Start mapping ...', label='PROCESS')
+                mapping.mapping_cc_flow(os.path.join(homo_dir, 'sub_cc'), no_pfam, none_dict,
+                                        THREADS, redundant_num, parameters.blast)
+                message(text='Start clustering None Pfam sequences...', label='PROCESS')
+            # 没有mapping的结果自己做组内cluster
+                mapping.none_mmseqs_cluster(unused_sequences_file, no_pfam, THREADS,
+                                            sub_cc, identity, coverage)
         # count_pangenome.py 统计泛基因组的信息
         object_list = cc_list(sub_cc, redundant_num, homo_dir)
         put_out_file(object_list, pangenome_dir)
-    message(text='Analyse Done.', label='PROCESS')
+        message(text='Analyse Done.', label='PROCESS')
+    except Exception as e:
+        logger.error({str(e)})
+        logger.exception("Exception details:")  # 记录完整堆栈跟踪
+        raise
+
+    logger.info("Analysis completed successfully")
+
 
 
 if __name__ == '__main__':

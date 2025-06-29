@@ -1,0 +1,19 @@
+# LSGFA-env.yaml
+name: lsgfa  # 环境名称
+
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+
+dependencies:
+  - python >=3.9
+  - bioconda::diamond =2.1.9
+  - bioconda::hmmer =3.4
+  - bioconda::mmseqs2 =16.747c6
+  - bioconda::mcl =22.282
+  - conda-forge::igraph
+  - conda-forge::leidenalg =0.10.2
+  - pandas =2.2.3
+  - tqdm =4.67.1
+  - conda-forge::progressbar =2.5  # 注意包名是progressbar2
