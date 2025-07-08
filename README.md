@@ -2,12 +2,12 @@
 ## Introduction
 LSGFA is a pan genome pipeline developed based on python (v3.9.16) to perform pangenomics studies on large-scale genomic datasets.
 
-In this pipeline, all proteins are first identified by Pfam structural domains, and then clustered according to the similarity of structural domain architectures (DA). Sequence similarity networks (SSN) are constructed in the clustered sequence groups, and the network structure features of the sequence groups are analyzed in order to determine the existence of subgroups Finally, the splitting of the sequence groups is completed.Pfam domain architectures of proteins was performed according to Pfam database (http://pfam.xfam.org/). For the identification results, the non-overlapping, longest domains were retained, for sequences that are not annotated to the Pfam domain, or for sequences where the total coverage of the Pfam domain does not exceed 60%, the DA result is recorded as None.
+In this pipeline, all proteins are first identified by Pfam structural domains, and then clustered according to the similarity of structural domain architectures (DA). Sequence similarity networks (SSN) are constructed in the clustered sequence groups, and the network structure features of the sequence groups are analyzed in order to determine the existence of subgroups Finally, the splitting of the sequence groups is completed. Pfam domain architectures of proteins was performed according to Pfam database (http://pfam.xfam.org/). For the identification results, the non-overlapping, longest domains were retained, for sequences that are not annotated to the Pfam domain, or for sequences where the total coverage of the Pfam domain does not exceed 60%, the DA result is recorded as None.
 
-For similarity clustering between different DA, the sum of the percentage of the same domain in sequence between DAs is calculated, if the same domain percentage more than 50%, the standard is reached.Calculate the proportion of the number of sequences in two DAs that reached the standard in their respective total number of sequences is multiplied as the weight between DAs, and finally obtain the subgraph based on this network structure to get the cluster of clustered sequences.
+For similarity clustering between different DA, the sum of the percentage of the same domain in sequence between DAs is calculated, if the same domain percentage more than 50%, the standard is reached. Calculate the proportion of the number of sequences in two DAs that reached the standard in their respective total number of sequences is multiplied as the weight between DAs, and finally obtain the subgraph based on this network structure to get the cluster of clustered sequences.
 
 ## Installation
-Simply download the zip file for Linux and extract the contents to a folder of your choice to install and complete.
+Download the zip file for Linux and extract the contents to a folder of your choice to install and complete.
 
 ```shell
 # Download 
@@ -15,7 +15,7 @@ unzip lsgfa.zip -d /your_path
 conda env create -f LSGFA-env.yaml
 ```
 
- LSGFA has the following dependencies:
+LSGFA has the following dependencies:
 
 ### Required dependencies
 * [igraph · PyPI](https://pypi.org/project/igraph/)
