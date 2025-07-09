@@ -1,13 +1,13 @@
 # LSGFA: Domain-based large-scale prokaryotic genomic orthologous gene inference
 ## Introduction
-LSGFA is a pan genome pipeline developed based on python (v3.9.16) to perform pangenomics studies on large-scale genomic datasets.
+LSGFA is a pan-genome pipeline developed based on Python (v3.9.16) to perform pangenomics studies on large-scale genomic datasets.
 
-In this pipeline, all proteins are first identified by Pfam structural domains, and then clustered according to the similarity of structural domain architectures (DA). Sequence similarity networks (SSN) are constructed in the clustered sequence groups, and the network structure features of the sequence groups are analyzed in order to determine the existence of subgroups Finally, the splitting of the sequence groups is completed. Pfam domain architectures of proteins was performed according to Pfam database (http://pfam.xfam.org/). For the identification results, the non-overlapping, longest domains were retained, for sequences that are not annotated to the Pfam domain, or for sequences where the total coverage of the Pfam domain does not exceed 60%, the DA result is recorded as None.
+In this pipeline, the Pfam domains of all proteins are first identified using the Pfam database (http://pfam.xfam.org/), then clustered based on the similarity of their domain architectures (DAs). A sequence similarity network (SSN) will be constructed for each clustered protein sequence group, and the network structure features of the sequence groups will be analyzed to determine the existence of subgroups. Finally, the sequence groups are fully separated. For the annotation result of Pfam domain, the non-overlapping, longest domains were retained. Additionally, for sequences not annotated to the Pfam domain or for sequences where the total coverage of the Pfam domain does not exceed 60%, the DA result is recorded as None.
 
-For similarity clustering between different DA, the sum of the percentage of the same domain in sequence between DAs is calculated, if the same domain percentage more than 50%, the standard is reached. Calculate the proportion of the number of sequences in two DAs that reached the standard in their respective total number of sequences is multiplied as the weight between DAs, and finally obtain the subgraph based on this network structure to get the cluster of clustered sequences.
+For similarity clustering between different DAs, the sum of the percentage of the same domain in sequence between DAs is calculated; if the same domain percentage is more than 50%, the standard is reached. Calculate the proportion of the number of sequences in two DAs that reached the standard in their respective total number of sequences is multiplied as the weight between DAs, and finally obtain the subgraph based on this network structure to get the cluster of clustered sequences.
 
 ## Installation
-Download the zip file for Linux and extract the contents to a folder of your choice to install and complete.
+Download the zip file for Linux and extract its contents to a folder of your choice to complete the installation.
 
 ```shell
 # Download 
@@ -50,9 +50,9 @@ mmseqs createindex pfam tmp -k 5 -s 7
 ```
 
 ### Input file format
-Input proteome file in `fasta` format ending with `faa`.
+Input the proteome files in `fasta` format ending with `faa`.
 
-Proteome files require sequences to be named in `Genome_ID|Gene_ID` format.
+Proteome files require sequences to be named in the format `Genome_ID|Gene_ID` .
 
 Example:
 
