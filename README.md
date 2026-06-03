@@ -157,3 +157,7 @@ python LSGFA.py -i input_dir -o output_dir -t threads -db Pfam-A.hmm
 ## License
 
 LSGFA is free software, licensed under GPLv3.
+
+## Publication
+
+Yu Zhao, Yi-Fei Lu, Xuan Hai, and Xiao-Yang Zhi. LSGFA: Domain-based infraspecific large-scale prokaryotic genomic orthologous gene inference. BMC Bioinformatics. 2026 in press. DOI: [10.1186/s12859-026-06506-z](https://dx.doi.org/10.1186/s12859-026-06506-z).
