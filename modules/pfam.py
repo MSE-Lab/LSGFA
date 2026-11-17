@@ -34,14 +34,17 @@ class Hits(list):
     def _handle_hmm(self, scan_out):
         """
         处理每条蛋白序列hmmscan的结果
-        :param scan_out: hmmscan的结果
+        :param scan_out: hmmscan的结果文件路径，或已按蛋白分好组的domtblout行列表
         """
-        with open(scan_out) as f:
-            content = f.readlines()  # hits是一个list，存放读取未处理的内容
-            hits = [i for i in content if not i.startswith("#")]
+        if isinstance(scan_out, (list, tuple)):
+            content = scan_out
+        else:
+            with open(scan_out) as f:
+                content = f.readlines()  # hits是一个list，存放读取未处理的内容
+        hits = [i for i in content if not i.startswith("#")]
 
         for i in hits:
-            split_line = [_ for _ in i.split(' ') if _ != '']
+            split_line = i.split()
             pfam_id = split_line[1]
             pfam_start = int(split_line[17])
             pfam_end = int(split_line[18])

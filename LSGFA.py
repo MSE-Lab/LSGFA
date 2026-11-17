@@ -52,6 +52,12 @@ def get_parameters():
         '-t', '--threads', type=int, dest='threads', default=8,
         help='Hmmscan threads. default: 8')
     parser.add_argument(
+        '-hmm_chunks', type=int, dest='hmm_chunks', default=None,
+        help='Number of hmmscan processes run in parallel for each genome. default: threads // hmm_cpu')
+    parser.add_argument(
+        '-hmm_cpu', type=int, dest='hmm_cpu', default=1,
+        help='--cpu passed to each hmmscan process. default: 1')
+    parser.add_argument(
         '-db', dest='pfam_db', required=True,
         help="Database path (required). Format depends on -search: "
              "For hmmscan: Pfam-A.hmm file path; "
@@ -347,7 +353,8 @@ def main():
     if not os.path.exists(os.path.join(graph_dir, 'cc_infomation.txt')):  # 如果按pfam划分这一步已经做完了
         logger.info(f"PFAM doamin annotation.")
         try:
-            pp = Panproteome(input_genomes_dir, pfam_dir, THREADS, parameters.pfam_db, parameters.search, evalue)  # 初始化及pfam注释
+            pp = Panproteome(input_genomes_dir, pfam_dir, THREADS, parameters.pfam_db, parameters.search, evalue,
+                             hmm_chunks=parameters.hmm_chunks, hmm_cpu=parameters.hmm_cpu)  # 初始化及pfam注释
             message(text=f'Start with PFAM annotation ...', label='PROCESS')
         except Exception as e:
             logger.error({str(e)})

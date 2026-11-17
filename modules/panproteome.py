@@ -2,6 +2,8 @@ import subprocess
 import glob
 import os
 import shutil
+import sys
+import tempfile
 import pandas as pd
 from collections import defaultdict
 from multiprocessing import Pool, Manager
@@ -158,6 +160,48 @@ class Proteome(dict):
 
         return
 
+    def search_pfam_domain_batch(self, threads, pfam_db, evalue='1e-5', chunks=None, cpu=1):
+        """
+        每个蛋白质组只做一次批量hmmscan，不再逐条蛋白启动进程。
+        hmmscan对每条查询序列都要遍历整个数据库且多线程扩展性差，
+        所以把序列分成threads块，每块一个hmmscan进程(--cpu 1)并行运行，再按蛋白合并domtblout结果。
+        """
+        names = list(self.keys())
+        cpu = max(1, int(cpu))
+        if chunks is None:
+            chunks = max(1, int(threads) // cpu)  # 默认块数 = 总线程数 / 每块cpu
+        n_chunks = max(1, min(int(chunks), len(names)))
+        chunks = [names[i::n_chunks] for i in range(n_chunks)]  # 轮转分块，使各块负载均衡
+
+        def run_chunk(idx, chunk_names, tmp_dir):
+            in_fa = os.path.join(tmp_dir, f'in_{idx}.faa')
+            domtbl = os.path.join(tmp_dir, f'out_{idx}.domtbl')
+            with open(in_fa, 'w') as f:
+                for name in chunk_names:
+                    f.write(f'>{name}\n{self[name].sequence}\n')
+            cmd = ['hmmscan', '--cpu', str(cpu), '-E', str(evalue), '--domE', str(evalue),
+                   '--noali', '-o', os.devnull, '--domtblout', domtbl, pfam_db, in_fa]
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if res.returncode != 0:
+                raise RuntimeError(f'hmmscan failed for {self.name} (chunk {idx}): {res.stderr}')
+            grouped_chunk = defaultdict(list)
+            with open(domtbl) as f:
+                for line in f:
+                    if line.startswith('#') or not line.strip():
+                        continue
+                    grouped_chunk[line.split()[3]].append(line)
+            return grouped_chunk
+
+        grouped = {}
+        with tempfile.TemporaryDirectory(prefix='hmmscan_') as tmp_dir:
+            with ThreadPoolExecutor(max_workers=n_chunks) as executor:
+                futures = [executor.submit(run_chunk, i, c, tmp_dir) for i, c in enumerate(chunks) if c]
+                for future in futures:
+                    grouped.update(future.result())  # 任一块失败都会抛出异常
+        for name, protein in self.items():
+            protein.hmm_profile(grouped.get(name, []), scan_type='hmmscan')
+        return
+
     def write_out_pfam(self, out_dir):  # self是一个faa文件
         proteome_domain = defaultdict(lambda: defaultdict(list))
         for protein in self.values():  # 每个orf
@@ -178,7 +222,7 @@ class Panproteome(list):
     存放泛基因组
     """
 
-    def __init__(self, f, outdir, threads, db, method, evalue):
+    def __init__(self, f, outdir, threads, db, method, evalue, hmm_chunks=None, hmm_cpu=1):
         super().__init__()
 
         # 获取所有需要处理的faa文件列表
@@ -218,7 +262,8 @@ class Panproteome(list):
                 else:
                     if method == 'hmmscan':
                         aProteome.read_fasta(fasta_name=faa_file, extract_ids=False)
-                        aProteome.search_pfam_domain(threads=threads, pfam_db=db, evalue=evalue)
+                        aProteome.search_pfam_domain_batch(threads=threads, pfam_db=db, evalue=evalue,
+                                                           chunks=hmm_chunks, cpu=hmm_cpu)
                     elif method == 'mmseqs-search':
                         aProteome.read_fasta(fasta_name=faa_file, extract_ids=True)
                         aProteome.search_mmseq_pfam_domain(mmseq_db=db, out_dir=outdir,

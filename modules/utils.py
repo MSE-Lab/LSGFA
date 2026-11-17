@@ -145,7 +145,7 @@ class CallCmd:
         self.parallel = parallel
         self.cmd_list = cmd_list
 
-    def call_cmd(self, cmd, queue: mp.Manager().Queue() = None):
+    def call_cmd(self, cmd, queue=None):
         pro = sp.Popen(cmd, shell=True, stdout=sp.PIPE, stderr=sp.PIPE)
         pro.wait()
         if self.parallel:
@@ -153,7 +153,7 @@ class CallCmd:
         else:
             return pro.returncode
 
-    def manager_queue(self, queue: mp.Manager().Queue() = None):
+    def manager_queue(self, queue=None):
         task_num = len(self.cmd_list)
         task_stat_list = []
         messages = f'[{timing()}]{self.process_info:<20}|'
