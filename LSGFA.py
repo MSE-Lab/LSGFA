@@ -208,13 +208,34 @@ def work_flow(input_file, blast_out_dir, threads, sub_cc_dir,  method, num, infl
                   f"Some error happend, missing file for {agroup.name} (expected {blast_res}).")
 
 
+def _allocate_inner_threads(faa_files, threads, outer):
+    """按文件大小为每个 cc 分配内层线程数：最大的 outer 个文件按大小比例瓜分 threads，其余为 1。"""
+    sizes = {}
+    for faa in faa_files:
+        try:
+            sizes[faa] = os.path.getsize(faa)
+        except OSError:
+            sizes[faa] = 0
+    alloc = {faa: 1 for faa in faa_files}
+    top = sorted(faa_files, key=lambda f: sizes[f], reverse=True)[:outer]
+    total = sum(sizes[f] for f in top)
+    if total <= 0:
+        return alloc
+    for f in top:
+        alloc[f] = max(1, min(threads, int(threads * sizes[f] / total)))
+    return alloc
+
+
 def parallel_workflow(faa_files, blast_out_dir, threads, sub_cc_dir, method, inflation, ssn, num=None):
     total_tasks = len(faa_files)  # 添加进度条
     make_working_dir([blast_out_dir, sub_cc_dir])
-    with ThreadPoolExecutor(max_workers=threads) as executor:
-        # 外层用 threads 并发跑多个 cc，内层工具(mcl/mmseqs/diamond)统一单线程，
-        # 避免外层并发 x 内层线程相乘导致线程过度订阅。
-        futures = {executor.submit(work_flow, faa, blast_out_dir, "1", sub_cc_dir,
+    threads = max(1, int(threads))
+    outer = max(1, min(threads, total_tasks))
+    inner_threads = _allocate_inner_threads(faa_files, threads, outer)
+    with ThreadPoolExecutor(max_workers=outer) as executor:
+        # 外层并发 outer 个 cc；内层线程数按文件大小动态分配，
+        # 小文件单线程，大文件获得额外线程，总预算约为 threads。
+        futures = {executor.submit(work_flow, faa, blast_out_dir, str(inner_threads[faa]), sub_cc_dir,
                                    method, num, inflation, ssn): faa for faa in faa_files}
         with tqdm(total=total_tasks) as pbar:
             for future in as_completed(futures):
