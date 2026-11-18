@@ -317,7 +317,8 @@ def main():
 
     logger.info("Check required software.")
     try:
-        check_software_installation()
+        check_software_installation(search=parameters.search, hmm_engine=parameters.hmm_engine,
+                                    blast=parameters.blast)
         if parameters.search == 'hmmscan' and parameters.hmm_engine == 'pyhmmer':
             try:
                 import pyhmmer  # noqa: F401

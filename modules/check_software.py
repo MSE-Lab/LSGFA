@@ -9,8 +9,8 @@ import shutil
 import subprocess
 
 
-def check_software_installation():
-    """检查所需第三方软件是否安装"""
+def check_software_installation(search='mmseqs-search', hmm_engine='pyhmmer', blast='mmseqs-search'):
+    """检查所需第三方软件是否安装(按所选方法只检查实际需要的软件)"""
     # 定义需要检查的软件列表
     required_software = [
         {'name': 'hmmscan', 'command': 'hmmscan', 'test': '-h',
@@ -21,6 +21,14 @@ def check_software_installation():
          'install_hint': 'conda install -c bioconda diamond'},
         {'name': 'mcl', 'command': 'mcl', 'test': '-h',
          'install_hint': 'conda install -c bioconda mcl'},
+    ]
+
+    need_hmmscan = search == 'hmmscan' and hmm_engine == 'hmmscan'
+    need_diamond = blast == 'diamond'
+    required_software = [
+        sw for sw in required_software
+        if (sw['name'] != 'hmmscan' or need_hmmscan)
+        and (sw['name'] != 'diamond' or need_diamond)
     ]
 
     missing_software = []
