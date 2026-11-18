@@ -4,6 +4,8 @@
 # @Author  ：zhaoyu
 # @File    ：LSGFA.py
 import os
+import math
+import threading
 
 # 锁死 BLAS/OpenMP 线程池：LSGFA 的并行由子进程/线程池承担，
 # 避免 numpy/pandas 按整机核数额外开线程造成线程过度订阅。
@@ -230,13 +232,27 @@ def parallel_workflow(faa_files, blast_out_dir, threads, sub_cc_dir, method, inf
     total_tasks = len(faa_files)  # 添加进度条
     make_working_dir([blast_out_dir, sub_cc_dir])
     threads = max(1, int(threads))
-    outer = max(1, min(threads, total_tasks))
+    budget = max(1, math.ceil(threads * 1.2))  # 同时运行的内层线程总数上限：-t 的 1.2 倍
+    outer = max(1, min(budget, total_tasks))
     inner_threads = _allocate_inner_threads(faa_files, threads, outer)
+    cond = threading.Condition()
+    used = [0]
+
+    def run_task(faa):
+        need = min(inner_threads[faa], budget)
+        with cond:
+            cond.wait_for(lambda: used[0] + need <= budget)
+            used[0] += need
+        try:
+            return work_flow(faa, blast_out_dir, str(need), sub_cc_dir, method, num, inflation, ssn)
+        finally:
+            with cond:
+                used[0] -= need
+                cond.notify_all()
+
+    ordered = sorted(faa_files, key=lambda f: os.path.getsize(f) if os.path.exists(f) else 0, reverse=True)
     with ThreadPoolExecutor(max_workers=outer) as executor:
-        # 外层并发 outer 个 cc；内层线程数按文件大小动态分配，
-        # 小文件单线程，大文件获得额外线程，总预算约为 threads。
-        futures = {executor.submit(work_flow, faa, blast_out_dir, str(inner_threads[faa]), sub_cc_dir,
-                                   method, num, inflation, ssn): faa for faa in faa_files}
+        futures = {executor.submit(run_task, faa): faa for faa in ordered}
         with tqdm(total=total_tasks) as pbar:
             for future in as_completed(futures):
                 try:
