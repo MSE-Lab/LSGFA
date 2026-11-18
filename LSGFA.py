@@ -362,7 +362,7 @@ def main():
         # 添加基因组数量检查
         if max_genome < 3:
             message(text='At least 3 genome files (.faa) are required', label='ERROR')
-            sys.exit(0)  # 非零退出码表示错误退出
+            sys.exit(1)  # 非零退出码表示错误退出
     except Exception as e:
         logger.error({str(e)})
         logger.exception("Exception details:")  # 记录完整堆栈跟踪

@@ -89,13 +89,15 @@ optional arguments:
     --pg           Stop at DAgraph
     -t THREADS, --threads THREADS
                    Number of threads used throughout the pipeline. default: 8
-    -db PFAM_DB    Pfam database path.
+    -db PFAM_DB    Database path (required). Format depends on -search:
+                   For hmmscan: Pfam-A.hmm file path;
+                   For mmseqs: pfam directory path
     -search {mmseqs-search,hmmscan}
                    Method for Pfam domain annotation (determines the format of -db). default = mmseqs-search
     -hmm_engine {pyhmmer,hmmscan}
-                   Engine for Pfam annotation (only used with -search hmmscan).
-                   pyhmmer loads Pfam into memory once and uses
-                   -t threads (requires: pip install pyhmmer). default: pyhmmer
+                   Engine used for hmmscan annotation (only used with -search hmmscan).
+                   pyhmmer loads Pfam into memory once and uses -t threads
+                   (requires pyhmmer). default: pyhmmer
     -hmm_chunks N  Number of hmmscan processes per genome. default: threads // hmm_cpu
                    Only used with -search hmmscan -hmm_engine hmmscan.
     -hmm_cpu N     --cpu passed to each hmmscan process. default: 1

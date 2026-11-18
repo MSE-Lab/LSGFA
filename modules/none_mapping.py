@@ -87,7 +87,7 @@ def split_clusters(filename, out_dir):
                 current_cluster = line
         else:
             cluster.append(line)  # 添加当前行到当前簇
-    if cluster is not []:
+    if cluster:
         clusters.append(cluster)
 
     for i, cluster in enumerate(clusters):
@@ -105,10 +105,12 @@ def none_mmseqs_cluster(input_file, mmseqs_out_dir, threads, sub_cc_dir, identit
             'mmseqs', 'easy-cluster', input, os.path.join(out_dir, f'unused_sequences'),
             os.path.join(out_dir, 'tmp'), '--cluster-mode', '1',
             '-s', '7.5', '-e', '1.000E-05', '--threads', str(thread), '--min-seq-id', str(id/100), '-c', str(cov/100)])
-        mmseqs_cmd = subprocess.Popen(mmseqs_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-        mmseqs_cmd.communicate()
+        proc = subprocess.run(mmseqs_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(f'mmseqs easy-cluster failed: {proc.stderr[-2000:]}')
         return res
 
+    shutil.rmtree(os.path.join(mmseqs_out_dir, 'tmp'), ignore_errors=True)  # 清理上次中断残留
     result = mmseqs(input_file, mmseqs_out_dir, threads, identity, coverage)
     split_clusters(result, sub_cc_dir)
     shutil.rmtree(os.path.join(mmseqs_out_dir, 'tmp'))
