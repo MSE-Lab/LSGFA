@@ -86,6 +86,11 @@ optional arguments:
 	--pg           Stop at DAgraph
 	-t THREADS, --threads THREADS
 	               Threads. default: 8
+	-hmm_chunks N  Number of hmmscan processes per genome. default: threads // hmm_cpu
+	-hmm_cpu N     --cpu passed to each hmmscan process. default: 1
+	-hmm_engine {hmmscan,pyhmmer}
+                   Engine for Pfam annotation. pyhmmer loads Pfam into memory once and uses
+                   -t threads (requires: pip install pyhmmer). default: hmmscan
 	-db PFAM_DB    Pfam database path.
 	-search {hmmscan,mmseqs-search}
                    Select a method for blasting. default=hmmscan-ssn {1,2,3}

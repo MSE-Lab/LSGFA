@@ -28,6 +28,8 @@ class Hits(list):
             self._handle_hmm(scan_out)
         elif scan_type == 'mmseqs':
             self._handle_mmseqs(scan_out)
+        elif scan_type == 'pyhmmer':
+            self._handle_pyhmmer(scan_out)
         self.ana_relations()
         self.sum_percent()
 
@@ -56,6 +58,20 @@ class Hits(list):
                          end=pfam_end,
                          hit_len=pfam_hit_length,
                          percent=pfam_percent)
+            self.raw.append(aPfam)
+
+    def _handle_pyhmmer(self, scan_out):
+        """
+        处理pyhmmer的结果
+        :param scan_out: (pfam_id, ali_from, ali_to, seq_len) 元组列表，与domtblout的第2、18、19、6列对应
+        """
+        for pfam_id, pfam_start, pfam_end, seq_len in scan_out:
+            pfam_hit_length = pfam_end - pfam_start + 1
+            aPfam = Pfam(pfam_id=pfam_id,
+                         start=pfam_start,
+                         end=pfam_end,
+                         hit_len=pfam_hit_length,
+                         percent=pfam_hit_length / seq_len)
             self.raw.append(aPfam)
 
     def _handle_mmseqs(self, scan_out):

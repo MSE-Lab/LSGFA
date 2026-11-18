@@ -58,6 +58,10 @@ def get_parameters():
         '-hmm_cpu', type=int, dest='hmm_cpu', default=1,
         help='--cpu passed to each hmmscan process. default: 1')
     parser.add_argument(
+        '-hmm_engine', choices=['hmmscan', 'pyhmmer'], default='hmmscan', dest='hmm_engine',
+        help='Engine used for hmmscan annotation. pyhmmer loads Pfam into memory once and uses -t threads '
+             '(requires pyhmmer). default: hmmscan')
+    parser.add_argument(
         '-db', dest='pfam_db', required=True,
         help="Database path (required). Format depends on -search: "
              "For hmmscan: Pfam-A.hmm file path; "
@@ -309,6 +313,11 @@ def main():
     logger.info("Check required software.")
     try:
         check_software_installation()
+        if parameters.hmm_engine == 'pyhmmer':
+            try:
+                import pyhmmer  # noqa: F401
+            except ImportError:
+                raise RuntimeError('-hmm_engine pyhmmer requires pyhmmer: pip install pyhmmer')
         message(text="All required software found. Starting analysis...", label='PROCESS')
     except Exception as e:
         logger.error({str(e)})
@@ -354,7 +363,8 @@ def main():
         logger.info(f"PFAM doamin annotation.")
         try:
             pp = Panproteome(input_genomes_dir, pfam_dir, THREADS, parameters.pfam_db, parameters.search, evalue,
-                             hmm_chunks=parameters.hmm_chunks, hmm_cpu=parameters.hmm_cpu)  # 初始化及pfam注释
+                             hmm_chunks=parameters.hmm_chunks, hmm_cpu=parameters.hmm_cpu,
+                             hmm_engine=parameters.hmm_engine)  # 初始化及pfam注释
             message(text=f'Start with PFAM annotation ...', label='PROCESS')
         except Exception as e:
             logger.error({str(e)})

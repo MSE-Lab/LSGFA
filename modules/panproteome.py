@@ -13,6 +13,23 @@ from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
+_PYHMMER_PROFILES = {}
+
+
+def load_pyhmmer_profiles(pfam_db):
+    """
+    载入Pfam模型(已hmmpress则直接载入优化后的profile)，同一进程内只载入一次
+    """
+    if pfam_db not in _PYHMMER_PROFILES:
+        from pyhmmer.plan7 import HMMFile
+        with HMMFile(pfam_db) as hf:
+            if hf.is_pressed():
+                _PYHMMER_PROFILES[pfam_db] = list(hf.optimized_profiles())
+            else:
+                _PYHMMER_PROFILES[pfam_db] = list(hf)
+    return _PYHMMER_PROFILES[pfam_db]
+
+
 class Protein:
     """
     存放蛋白质序列
@@ -202,6 +219,39 @@ class Proteome(dict):
             protein.hmm_profile(grouped.get(name, []), scan_type='hmmscan')
         return
 
+    def search_pfam_domain_pyhmmer(self, threads, pfam_db, evalue='1e-5'):
+        """
+        使用pyhmmer在内存中做hmmscan，Pfam模型只载入一次并缓存，不再重复读库和启动子进程
+        """
+        import pyhmmer
+        profiles = load_pyhmmer_profiles(pfam_db)
+        alphabet = pyhmmer.easel.Alphabet.amino()
+        names = list(self.keys())
+        queries = []
+        for name in names:
+            seq = pyhmmer.easel.TextSequence(name=name.encode(), sequence=self[name].sequence)
+            queries.append(seq.digitize(alphabet))
+        e = float(evalue)
+        results = {}
+        for hits in pyhmmer.hmmer.hmmscan(queries, profiles, cpus=int(threads), E=e, domE=e):
+            qname = hits.query.name
+            qname = qname.decode() if isinstance(qname, bytes) else qname
+            qlen = len(hits.query)
+            rows = []
+            for hit in hits:
+                if not hit.reported:
+                    continue
+                acc = hit.accession
+                acc = acc.decode() if isinstance(acc, bytes) else acc
+                for domain in hit.domains:
+                    if not domain.reported:
+                        continue
+                    rows.append((acc, domain.alignment.target_from, domain.alignment.target_to, qlen))
+            results[qname] = rows
+        for name, protein in self.items():
+            protein.hmm_profile(results.get(name, []), scan_type='pyhmmer')
+        return
+
     def write_out_pfam(self, out_dir):  # self是一个faa文件
         proteome_domain = defaultdict(lambda: defaultdict(list))
         for protein in self.values():  # 每个orf
@@ -222,7 +272,8 @@ class Panproteome(list):
     存放泛基因组
     """
 
-    def __init__(self, f, outdir, threads, db, method, evalue, hmm_chunks=None, hmm_cpu=1):
+    def __init__(self, f, outdir, threads, db, method, evalue, hmm_chunks=None, hmm_cpu=1,
+                 hmm_engine='hmmscan'):
         super().__init__()
 
         # 获取所有需要处理的faa文件列表
@@ -262,8 +313,11 @@ class Panproteome(list):
                 else:
                     if method == 'hmmscan':
                         aProteome.read_fasta(fasta_name=faa_file, extract_ids=False)
-                        aProteome.search_pfam_domain_batch(threads=threads, pfam_db=db, evalue=evalue,
-                                                           chunks=hmm_chunks, cpu=hmm_cpu)
+                        if hmm_engine == 'pyhmmer':
+                            aProteome.search_pfam_domain_pyhmmer(threads=threads, pfam_db=db, evalue=evalue)
+                        else:
+                            aProteome.search_pfam_domain_batch(threads=threads, pfam_db=db, evalue=evalue,
+                                                               chunks=hmm_chunks, cpu=hmm_cpu)
                     elif method == 'mmseqs-search':
                         aProteome.read_fasta(fasta_name=faa_file, extract_ids=True)
                         aProteome.search_mmseq_pfam_domain(mmseq_db=db, out_dir=outdir,
