@@ -6,7 +6,6 @@ import sys
 import tempfile
 import pandas as pd
 from collections import defaultdict
-from multiprocessing import Pool, Manager
 from modules.utils import *
 from modules.pfam import Pfam, Hits
 from tqdm import tqdm
@@ -35,10 +34,10 @@ class Protein:
     存放蛋白质序列
     """
 
-    def __init__(self, domain: list = [], name: str = "", sequence: str = ""):
+    def __init__(self, domain: list = None, name: str = "", sequence: str = ""):
         self.name = name
         self.sequence = sequence
-        self.domain = domain
+        self.domain = domain if domain is not None else []
 
     def __str__(self):
         return self.name
@@ -47,34 +46,6 @@ class Protein:
         aHits = Hits(scan_out, scan_type)
         self.domain = aHits  # domain是很多pfam的组合
 
-    def _hmm_scan(self, pfamDB, evalue='1e-5'):
-        """
-        对每条蛋白序列使用hmmscan进行Pfam注释
-        :param evalue: evalue阈值
-        """
-        in_temp = make_temp_file(prefix='in_', close=False)
-        in_temp.write(f'>{self.name}\n{self.sequence}')
-        in_temp.close()
-        out_temp = make_temp_file(prefix='out_', close=True)
-        cmd = ["hmmscan", "-E", str(evalue), "--domE", str(evalue), "--domtblout", out_temp.name, pfamDB, in_temp.name]
-        # cmd2 = ['hmmscan', '--cut_ga', '--domtblout', out_temp.name, pfamDB, in_temp.name]
-        cap = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        cap.communicate()
-        if cap.returncode != 0:
-            # some errors happened
-            for e in cap.stderr:
-                print(e)
-        else:
-            # remove input temporary sequence file
-            os.unlink(in_temp.name)
-        self.hmm_profile(out_temp.name, scan_type='hmmscan')
-        return out_temp.name
-
-    def identify_pfam(self, pfamDB, evalue='1e-5'):
-        out_hmmscan = self._hmm_scan(pfamDB, evalue)
-        os.unlink(out_hmmscan)
-        # 通过进程池 Protein.domain 似乎无法更新，所以把结果put出来在进程池外再更新
-        # queue.put((self.name, self.domain))
 
 
 class Proteome(dict):
@@ -137,8 +108,9 @@ class Proteome(dict):
             ['mmseqs', 'easy-search', self.file, mmseq_db, res, tmp_dir,
              '-e', str(evalue), '--threads', str(threads),
              '--format-output', 'query,target,qlen,qstart,qend,tlen,tstart,tend,alnlen,bits,evalue,gapopen,fident'])
-        mmseqs_cmd = subprocess.Popen(mmseqs_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-        mmseqs_cmd.communicate()
+        proc = subprocess.run(mmseqs_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(f'mmseqs easy-search failed for {self.name}: {proc.stderr[-2000:]}')
 
         if os.path.exists(res):
             # 处理mmseqs的结果
@@ -155,26 +127,6 @@ class Proteome(dict):
                 self[query] = aProtein
             os.remove(res)
             shutil.rmtree(tmp_dir)
-        return
-
-    def search_pfam_domain(self, threads, pfam_db, evalue='1e-5'):
-        """
-        搜索Pfam-A.hmm
-        """
-        with ThreadPoolExecutor(max_workers=threads) as executor:
-            # 提交所有任务到线程池，并创建一个进度条
-            futures = {executor.submit(protein.identify_pfam, pfam_db, evalue):
-                           protein for protein in self.values()}
-            # 使用 tqdm 创建进度条
-            for future in as_completed(futures):
-                try:
-                    result = future.result()  # This will raise an exception if the function raised one
-                except Exception as e:
-                    print(f"Error processing {futures[future]}: {e}")
-            # 等待所有任务完成（虽然 as_completed 已经做了这个，但我们可以显式地处理）
-            for future in futures.keys():
-                future.result()
-
         return
 
     def search_pfam_domain_batch(self, threads, pfam_db, evalue='1e-5', chunks=None, cpu=1):
@@ -273,7 +225,7 @@ class Panproteome(list):
     """
 
     def __init__(self, f, outdir, threads, db, method, evalue, hmm_chunks=None, hmm_cpu=1,
-                 hmm_engine='hmmscan'):
+                 hmm_engine='pyhmmer'):
         super().__init__()
 
         # 获取所有需要处理的faa文件列表

@@ -177,27 +177,27 @@ def work_flow(input_file, blast_out_dir, threads, sub_cc_dir,  method, num, infl
     else:
         abc_file = os.path.join(blast_out_dir, f'{agroup.name}.abc')
 
-        if not os.path.exists(abc_file):
-            blast_res = os.path.join(blast_out_dir, f'{agroup.name}.txt')
-            if method == 'diamond':
-                agroup.make_db(blast_out_dir, threads)  # make db
-                split_files = agroup.split_file(blast_out_dir)
-                for split_file in split_files:
-                    result_file = agroup.homology_abc(split_file, blast_out_dir, threads, method, num)
-                    result_files.append(result_file)
-                agroup.merge_files(blast_res, result_files)
-                if len(split_files) != 1:
-                    for file in split_files + result_files:
-                        os.remove(file)
-            elif method == 'mmseqs-search':
-                result_file = agroup.homology_abc(input_file, blast_out_dir, threads, method, num)
+        blast_res = os.path.join(blast_out_dir, f'{agroup.name}.txt')
         try:
-            agroup.filter_abc(blast_res, abc_file, ssn)
+            if not os.path.exists(abc_file):  # abc已存在时(续跑)跳过比对和过滤，直接做mcl
+                if method == 'diamond':
+                    agroup.make_db(blast_out_dir, threads)  # make db
+                    split_files = agroup.split_file(blast_out_dir)
+                    for split_file in split_files:
+                        result_file = agroup.homology_abc(split_file, blast_out_dir, threads, method, num)
+                        result_files.append(result_file)
+                    agroup.merge_files(blast_res, result_files)
+                    if len(split_files) != 1:
+                        for file in split_files + result_files:
+                            os.remove(file)
+                elif method == 'mmseqs-search':
+                    agroup.homology_abc(input_file, blast_out_dir, threads, method, num)
+                agroup.filter_abc(blast_res, abc_file, ssn)
             agroup.mcl_identity(abc_file, blast_out_dir, threads, inflation=inflation)  # 处理blast结果
             agroup.mcl_cc_file(sub_cc_dir)  # mcl聚类
         except FileNotFoundError as e:
             print(f"Error: {e}. \n"
-                  f"Some error happend, there is no {result_file}.")
+                  f"Some error happend, missing file for {agroup.name} (expected {blast_res}).")
 
 
 def parallel_workflow(faa_files, blast_out_dir, threads, sub_cc_dir, method, inflation, ssn, num=None):
@@ -342,26 +342,18 @@ def main():
         raise
 
     # 判断是否进行重做
-    if parameters.fg:  # 从PGraph重做
-        message(text=f"Re-perform the graph search(not including annotation).", label='PROCESS')
-        output_dirs = [graph_dir, query_dir, no_pfam,
-                       homo_dir, pangenome_dir]
-        make_working_dir(output_dirs)
-    if parameters.fb:
-        message(text=f"Re-perform the homology search(blast).", label='PROCESS')
-        output_dirs = [homo_dir, pangenome_dir]
-        make_working_dir(output_dirs)
     if parameters.f:
         message(text=f"Re-perform whole process(including pfam annotation).", label='PROCESS')
-        output_dirs = [pfam_dir,
-                       graph_dir, query_dir, no_pfam,
-                       homo_dir, pangenome_dir]
-        make_working_dir(output_dirs)
+        make_working_dir([pfam_dir, graph_dir, query_dir, no_pfam, homo_dir, pangenome_dir])
+    elif parameters.fg:  # 从PGraph重做
+        message(text=f"Re-perform the graph search(not including annotation).", label='PROCESS')
+        make_working_dir([graph_dir, query_dir, no_pfam, homo_dir, pangenome_dir])
+    elif parameters.fb:
+        message(text=f"Re-perform the homology search(blast).", label='PROCESS')
+        make_working_dir([homo_dir, pangenome_dir])
     else:
         message(text=f"The program will continue what was left unfinished.", label='PROCESS')
-        output_dirs = [pfam_dir, graph_dir, query_dir, no_pfam,
-                       homo_dir, pangenome_dir]
-        make_working_dir(output_dirs, delate=False)
+        make_working_dir([pfam_dir, graph_dir, query_dir, no_pfam, homo_dir, pangenome_dir], delate=False)
 
     logger.info(f"Input genomes dir: {input_genomes_dir}")
     try:

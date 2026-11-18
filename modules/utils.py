@@ -301,7 +301,7 @@ def validate_range(value, min_val, max_val, name):
     try:
         fvalue = float(value)
     except ValueError:
-        message(text="'{value}' is not a valid number for {name}", label='Error')
+        message(text=f"'{value}' is not a valid number for {name}", label='Error')
         exit(1)
     else:
         if not (min_val <= fvalue <= max_val):
