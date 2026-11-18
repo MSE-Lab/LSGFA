@@ -232,7 +232,10 @@ def parallel_workflow(faa_files, blast_out_dir, threads, sub_cc_dir, method, inf
     total_tasks = len(faa_files)  # 添加进度条
     make_working_dir([blast_out_dir, sub_cc_dir])
     threads = max(1, int(threads))
-    budget = max(1, math.ceil(threads * 1.2))  # 同时运行的内层线程总数上限：-t 的 1.2 倍
+    cpu_limit = os.cpu_count() or 1
+    threads = min(threads, cpu_limit)
+    # 同时运行的内层线程总数上限：-t 的 1.2 倍，且不超过 os.cpu_count()
+    budget = max(1, min(math.ceil(threads * 1.2), cpu_limit))
     outer = max(1, min(budget, total_tasks))
     inner_threads = _allocate_inner_threads(faa_files, threads, outer)
     cond = threading.Condition()
