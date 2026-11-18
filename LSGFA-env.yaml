@@ -17,4 +17,4 @@ dependencies:
   - pandas =2.2.3
   - tqdm =4.67.1
   - conda-forge::progressbar =2.5  # 注意包名是progressbar2
-  - bioconda::pyhmmer  # optional, only needed for -hmm_engine pyhmmer
+  - bioconda::pyhmmer  # optional, only needed for -search hmmscan -hmm_engine pyhmmer

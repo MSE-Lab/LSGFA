@@ -1,6 +1,6 @@
 # LSGFA: Domain-based large-scale prokaryotic genomic orthologous gene inference
 ## Introduction
-LSGFA is a pan-genome pipeline developed based on Python (v3.9.16) to perform pangenomics studies on large-scale genomic datasets.
+LSGFA is a pan-genome pipeline developed based on Python (developed with v3.9.16, also tested with v3.13) to perform pangenomics studies on large-scale genomic datasets.
 
 In this pipeline, the Pfam domains of all proteins are first identified using the Pfam database (http://pfam.xfam.org/), then clustered based on the similarity of their domain architectures (DAs). A sequence similarity network (SSN) will be constructed for each clustered protein sequence group, and the network structure features of the sequence groups will be analyzed to determine the existence of subgroups. Finally, the sequence groups are fully separated. For the annotation result of Pfam domain, the non-overlapping, longest domains were retained. Additionally, for sequences not annotated to the Pfam domain or for sequences where the total coverage of the Pfam domain does not exceed 60%, the DA result is recorded as None.
 
@@ -24,8 +24,11 @@ LSGFA has the following dependencies:
 * [tqdm · PyPI](https://pypi.org/project/tqdm/)
 * [diamond](https://github.com/bbuchfink/diamond)
 * [MMseqs2](https://github.com/soedinglab/MMseqs2)
-* [HMMER](http://www.hmmer.org/)
 * [mcl](https://micans.org/mcl/)
+
+### Optional dependencies
+* [HMMER](http://www.hmmer.org/): only needed with `-search hmmscan`
+* [pyhmmer](https://pypi.org/project/pyhmmer/): only needed with `-search hmmscan -hmm_engine pyhmmer` (`pip install pyhmmer`)
 
 ### Database
 * [Pfam](http://pfam.xfam.org/)
@@ -74,48 +77,48 @@ The main program script is `LSGFA.py`
 python LSGFA.py -h 
 
 optional arguments: 
-	-h, --help     ashow this help message
-	-i INPUT_DIR, --in INPUT_DIR
-	               The directory including all genome files
-	-o OUTPUT_DIR, --out OUTPUT_DIR
-	               Specify a output directory. default: ./
-	-f             Re-perform whole process(including pfam annotation)
-	-fg            Re-perform the graph search(not including pfam annotation)
-	-fb            Re-perform the homology search(blast)
-	--pfam         Stop at pfam annotation
-	--pg           Stop at DAgraph
-	-t THREADS, --threads THREADS
-	               Number of threads used throughout the pipeline. default: 8
-	-db PFAM_DB    Pfam database path.
-	-search {mmseqs-search,hmmscan}
+    -h, --help     ashow this help message
+    -i INPUT_DIR, --in INPUT_DIR
+                   The directory including all genome files
+    -o OUTPUT_DIR, --out OUTPUT_DIR
+                   Specify a output directory. default: ./result
+    -f             Re-perform whole process(including pfam annotation)
+    -fg            Re-perform the graph search(not including pfam annotation)
+    -fb            Re-perform the homology search(blast)
+    --pfam         Stop at pfam annotation
+    --pg           Stop at DAgraph
+    -t THREADS, --threads THREADS
+                   Number of threads used throughout the pipeline. default: 8
+    -db PFAM_DB    Pfam database path.
+    -search {mmseqs-search,hmmscan}
                    Method for Pfam domain annotation (determines the format of -db). default = mmseqs-search
-	-hmm_engine {pyhmmer,hmmscan}
+    -hmm_engine {pyhmmer,hmmscan}
                    Engine for Pfam annotation (only used with -search hmmscan).
                    pyhmmer loads Pfam into memory once and uses
                    -t threads (requires: pip install pyhmmer). default: pyhmmer
-	-hmm_chunks N  Number of hmmscan processes per genome. default: threads // hmm_cpu
+    -hmm_chunks N  Number of hmmscan processes per genome. default: threads // hmm_cpu
                    Only used with -search hmmscan -hmm_engine hmmscan.
-	-hmm_cpu N     --cpu passed to each hmmscan process. default: 1
+    -hmm_cpu N     --cpu passed to each hmmscan process. default: 1
                    Only used with -search hmmscan -hmm_engine hmmscan.
-	-ssn {1,2,3}
+    -ssn {1,2,3}
                    Select a method for build sequence similarity network (SSN).
                    default = 3
                        1 = Reciprocal best hit (RBH)
                        2 = Specify a reciprocal hit above the threshold (identity >= 40).
                        3 = reciprocal hits above the minimum reciprocal hit threshold.
-	-blast {diamond,mmseqs-search}
+    -blast {diamond,mmseqs-search}
                    Method for all-vs-all sequence alignment within each DA cluster
                    (used to build the SSN) and for mapping None-DA sequences. default = mmseqs-search
-	-id IDENTITY   The identity of easy-search for the sequence with DA of None.
-	               [0-100], default = 40.
-	-c COVERAGE    The coverage of homology easy-search for the sequence with DA of None.
-	               [0-100], default = 50.
-	-e EVALUE      E-value threshold for Pfam domain annotation.
-	               [0-1], default = 1e-5.
-	-inflation INFLATION  
-	               Inflation (varying this parameter affects granularity)
-	               [1.2-5.0], default = 1.5.
-	-partition_type {1,2,3,4,5}
+    -id IDENTITY   The identity of easy-search for the sequence with DA of None.
+                   [0-100], default = 40.
+    -c COVERAGE    The coverage of homology easy-search for the sequence with DA of None.
+                   [0-100], default = 50.
+    -e EVALUE      E-value threshold for Pfam domain annotation.
+                   [0-1], default = 1e-5.
+    -inflation INFLATION  
+                   Inflation (varying this parameter affects granularity)
+                   [1.2-5.0], default = 1.5.
+    -partition_type {1,2,3,4,5}
                    Select a method for la.partition_type.
                    default = 4
                         1 = ModularityVertexPartition
@@ -123,7 +126,7 @@ optional arguments:
                         3 = RBERVertexPartition
                         4 = CPMVertexPartition
                         5 = SurpriseVertexPartition
-	-rp RESOLUTION_PARAMETER
+    -rp RESOLUTION_PARAMETER
                    [0-1.0], default = 0.9.
                    Some methods accept resolution parameters,
                    such as RBConfigurationVertexPartition, RBERVertexPartition and CPMVertexPartition. 
@@ -131,6 +134,8 @@ optional arguments:
 
 ```
 ## General method of use
+
+Note: `-hmm_engine`, `-hmm_chunks` and `-hmm_cpu` only take effect with `-search hmmscan`; `-hmm_chunks` and `-hmm_cpu` further require `-hmm_engine hmmscan`.
 
 ```shell
 python LSGFA.py -i input_dir -o output_dir -t threads -db pfam_db/pfam
@@ -154,7 +159,7 @@ python LSGFA.py -i input_dir -o output_dir -t threads -search hmmscan -db Pfam-A
 
 2. The subnetworks obtained from DA clustering are shown in the `graph_cc` folder.
 
-3. Clustering results for subnetworks are available in the `homology_search' folder.
+3. Clustering results for subnetworks are available in the `homology_search` folder.
 
 - `blast`: blast results and ABC files for subnetworks
 
