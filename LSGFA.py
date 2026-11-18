@@ -3,7 +3,15 @@
 # @Time    ：2024/10/30
 # @Author  ：zhaoyu
 # @File    ：LSGFA.py
-import os.path
+import os
+
+# 锁死 BLAS/OpenMP 线程池：LSGFA 的并行由子进程/线程池承担，
+# 避免 numpy/pandas 按整机核数额外开线程造成线程过度订阅。
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+
 from modules.panproteome import *
 from modules.build_graph import *
 import shutil
@@ -204,7 +212,9 @@ def parallel_workflow(faa_files, blast_out_dir, threads, sub_cc_dir, method, inf
     total_tasks = len(faa_files)  # 添加进度条
     make_working_dir([blast_out_dir, sub_cc_dir])
     with ThreadPoolExecutor(max_workers=threads) as executor:
-        futures = {executor.submit(work_flow, faa, blast_out_dir, str(threads), sub_cc_dir,
+        # 外层用 threads 并发跑多个 cc，内层工具(mcl/mmseqs/diamond)统一单线程，
+        # 避免外层并发 x 内层线程相乘导致线程过度订阅。
+        futures = {executor.submit(work_flow, faa, blast_out_dir, "1", sub_cc_dir,
                                    method, num, inflation, ssn): faa for faa in faa_files}
         with tqdm(total=total_tasks) as pbar:
             for future in as_completed(futures):
