@@ -50,7 +50,7 @@ def get_parameters():
     # 个性化参数
     parser.add_argument(
         '-t', '--threads', type=int, dest='threads', default=8,
-        help='Hmmscan threads. default: 8')
+        help='Number of threads used throughout the pipeline. default: 8')
     parser.add_argument(
         '-hmm_chunks', type=int, dest='hmm_chunks', default=None,
         help='Number of hmmscan processes run in parallel for each genome. default: threads // hmm_cpu')
@@ -69,7 +69,8 @@ def get_parameters():
     parser.add_argument(
         '-search',
         choices=['hmmscan', 'mmseqs-search'], default='hmmscan',  # 只允许这几个选项
-        help='Select a method for blasting. default=hmmscan')
+        help='Method for Pfam domain annotation (determines the format of -db: '
+             'hmmscan -> Pfam-A.hmm file; mmseqs-search -> mmseqs pfam database). default = hmmscan')
     parser.add_argument(
         '-ssn',
         choices=['1', '2', '3'], default='3',  # 只允许这几个选项
@@ -81,7 +82,8 @@ def get_parameters():
     parser.add_argument(
         '-blast',
         choices=['diamond', 'mmseqs-search'], default='mmseqs-search',  # 只允许这几个选项
-        help='Select a method for blasting. default=mmseqs-search')
+        help='Method for all-vs-all sequence alignment within each DA cluster '
+             '(used to build the SSN) and for mapping None-DA sequences. default = mmseqs-search')
     parser.add_argument(
         '-id', dest='identity', type=int, default=40,
         help='The identity of easy-search for the sequence with DA of None.'
@@ -92,7 +94,7 @@ def get_parameters():
              ' [0-100], default = 50.')
     parser.add_argument(
         '-e', dest='evalue', default=1e-5,
-        help='The coverage of Pfam domain annotation.'
+        help='E-value threshold for Pfam domain annotation.'
              ' [0-1], default = 1e-5.')
     parser.add_argument(
         '-inflation', dest='inflation', default=1.5,

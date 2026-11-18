@@ -45,8 +45,8 @@ If using **MMseqs2** to annotate Pfam, download the **seed** database.
 
 ```shell
 # Download the Pfam database using mmseqs2
-mmseqs databases Pfam-A.seed  pfam_dir/pfam  tmp --threads 10
-mmseqs createindex pfam tmp -k 5 -s 7
+mmseqs databases Pfam-A.seed pfam_db/pfam tmp --threads 10
+mmseqs createindex pfam_db/pfam tmp -k 5 -s 7
 ```
 
 ### Input file format
@@ -85,7 +85,7 @@ optional arguments:
 	--pfam         Stop at pfam annotation
 	--pg           Stop at DAgraph
 	-t THREADS, --threads THREADS
-	               Threads. default: 8
+	               Number of threads used throughout the pipeline. default: 8
 	-hmm_chunks N  Number of hmmscan processes per genome. default: threads // hmm_cpu
 	-hmm_cpu N     --cpu passed to each hmmscan process. default: 1
 	-hmm_engine {hmmscan,pyhmmer}
@@ -93,19 +93,21 @@ optional arguments:
                    -t threads (requires: pip install pyhmmer). default: hmmscan
 	-db PFAM_DB    Pfam database path.
 	-search {hmmscan,mmseqs-search}
-                   Select a method for blasting. default=hmmscan-ssn {1,2,3}
+                   Method for Pfam domain annotation (determines the format of -db). default = hmmscan
+    -ssn {1,2,3}
                    Select a method for build sequence similarity network (SSN).
                    default = 3
                        1 = Reciprocal best hit (RBH)
                        2 = Specify a reciprocal hit above the threshold (identity >= 40).
                        3 = reciprocal hits above the minimum reciprocal hit threshold.
 	-blast {diamond,mmseqs-search}
-                   Select a method for blasting. default=mmseqs-search
+                   Method for all-vs-all sequence alignment within each DA cluster
+                   (used to build the SSN) and for mapping None-DA sequences. default = mmseqs-search
 	-id IDENTITY   The identity of easy-search for the sequence with DA of None.
 	               [0-100], default = 40.
 	-c COVERAGE    The coverage of homology easy-search for the sequence with DA of None.
 	               [0-100], default = 50.
-	-e EVALUE      The coverage of Pfam domain annotation.
+	-e EVALUE      E-value threshold for Pfam domain annotation.
 	               [0-1], default = 1e-5.
 	-inflation INFLATION  
 	               Inflation (varying this parameter affects granularity)
