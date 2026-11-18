@@ -32,6 +32,14 @@ LSGFA has the following dependencies:
 
 Before running this program, please download the Pfam database.
 
+If using **MMseqs2** to annotate Pfam (default), download the **seed** database.
+
+```shell
+# Download the Pfam database using mmseqs2
+mmseqs databases Pfam-A.seed pfam_db/pfam tmp --threads 10
+mmseqs createindex pfam_db/pfam tmp -k 5 -s 7
+```
+
 If using **hmmscan** to annotate Pfam, download the **Pfam-A.hmm.gz.**
 
 ```shell
@@ -39,14 +47,6 @@ If using **hmmscan** to annotate Pfam, download the **Pfam-A.hmm.gz.**
 wget ftp://ftp.ebi.ac.uk/pub/databases/Pfam/releases/Pfam37.1/Pfam-A.hmm.gz
 gzip -d Pfam-A.hmm.gz
 hmmpress Pfam-A.hmm
-```
-
-If using **MMseqs2** to annotate Pfam, download the **seed** database.
-
-```shell
-# Download the Pfam database using mmseqs2
-mmseqs databases Pfam-A.seed pfam_db/pfam tmp --threads 10
-mmseqs createindex pfam_db/pfam tmp -k 5 -s 7
 ```
 
 ### Input file format
@@ -86,15 +86,18 @@ optional arguments:
 	--pg           Stop at DAgraph
 	-t THREADS, --threads THREADS
 	               Number of threads used throughout the pipeline. default: 8
-	-hmm_chunks N  Number of hmmscan processes per genome. default: threads // hmm_cpu
-	-hmm_cpu N     --cpu passed to each hmmscan process. default: 1
-	-hmm_engine {hmmscan,pyhmmer}
-                   Engine for Pfam annotation. pyhmmer loads Pfam into memory once and uses
-                   -t threads (requires: pip install pyhmmer). default: hmmscan
 	-db PFAM_DB    Pfam database path.
-	-search {hmmscan,mmseqs-search}
-                   Method for Pfam domain annotation (determines the format of -db). default = hmmscan
-    -ssn {1,2,3}
+	-search {mmseqs-search,hmmscan}
+                   Method for Pfam domain annotation (determines the format of -db). default = mmseqs-search
+	-hmm_engine {pyhmmer,hmmscan}
+                   Engine for Pfam annotation (only used with -search hmmscan).
+                   pyhmmer loads Pfam into memory once and uses
+                   -t threads (requires: pip install pyhmmer). default: pyhmmer
+	-hmm_chunks N  Number of hmmscan processes per genome. default: threads // hmm_cpu
+                   Only used with -search hmmscan -hmm_engine hmmscan.
+	-hmm_cpu N     --cpu passed to each hmmscan process. default: 1
+                   Only used with -search hmmscan -hmm_engine hmmscan.
+	-ssn {1,2,3}
                    Select a method for build sequence similarity network (SSN).
                    default = 3
                        1 = Reciprocal best hit (RBH)
@@ -130,7 +133,13 @@ optional arguments:
 ## General method of use
 
 ```shell
-python LSGFA.py -i input_dir -o output_dir -t threads -db Pfam-A.hmm
+python LSGFA.py -i input_dir -o output_dir -t threads -db pfam_db/pfam
+```
+
+To annotate with hmmscan instead, specify `-search hmmscan` and the `Pfam-A.hmm` file:
+
+```shell
+python LSGFA.py -i input_dir -o output_dir -t threads -search hmmscan -db Pfam-A.hmm
 ```
 
 ## Output

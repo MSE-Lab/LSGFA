@@ -52,25 +52,28 @@ def get_parameters():
         '-t', '--threads', type=int, dest='threads', default=8,
         help='Number of threads used throughout the pipeline. default: 8')
     parser.add_argument(
-        '-hmm_chunks', type=int, dest='hmm_chunks', default=None,
-        help='Number of hmmscan processes run in parallel for each genome. default: threads // hmm_cpu')
-    parser.add_argument(
-        '-hmm_cpu', type=int, dest='hmm_cpu', default=1,
-        help='--cpu passed to each hmmscan process. default: 1')
-    parser.add_argument(
-        '-hmm_engine', choices=['hmmscan', 'pyhmmer'], default='hmmscan', dest='hmm_engine',
-        help='Engine used for hmmscan annotation. pyhmmer loads Pfam into memory once and uses -t threads '
-             '(requires pyhmmer). default: hmmscan')
-    parser.add_argument(
         '-db', dest='pfam_db', required=True,
         help="Database path (required). Format depends on -search: "
              "For hmmscan: Pfam-A.hmm file path; "
              "For mmseqs: pfam directory path")
     parser.add_argument(
         '-search',
-        choices=['hmmscan', 'mmseqs-search'], default='hmmscan',  # 只允许这几个选项
+        choices=['mmseqs-search', 'hmmscan'], default='mmseqs-search',  # 只允许这几个选项
         help='Method for Pfam domain annotation (determines the format of -db: '
-             'hmmscan -> Pfam-A.hmm file; mmseqs-search -> mmseqs pfam database). default = hmmscan')
+             'hmmscan -> Pfam-A.hmm file; mmseqs-search -> mmseqs pfam database). default = mmseqs-search')
+    parser.add_argument(
+        '-hmm_engine', choices=['pyhmmer', 'hmmscan'], default='pyhmmer', dest='hmm_engine',
+        help='Engine used for hmmscan annotation (only used with -search hmmscan). '
+             'pyhmmer loads Pfam into memory once and uses -t threads '
+             '(requires pyhmmer). default: pyhmmer')
+    parser.add_argument(
+        '-hmm_chunks', type=int, dest='hmm_chunks', default=None,
+        help='Number of hmmscan processes run in parallel for each genome. '
+             'Only used with -search hmmscan -hmm_engine hmmscan. default: threads // hmm_cpu')
+    parser.add_argument(
+        '-hmm_cpu', type=int, dest='hmm_cpu', default=1,
+        help='--cpu passed to each hmmscan process. '
+             'Only used with -search hmmscan -hmm_engine hmmscan. default: 1')
     parser.add_argument(
         '-ssn',
         choices=['1', '2', '3'], default='3',  # 只允许这几个选项
@@ -315,7 +318,7 @@ def main():
     logger.info("Check required software.")
     try:
         check_software_installation()
-        if parameters.hmm_engine == 'pyhmmer':
+        if parameters.search == 'hmmscan' and parameters.hmm_engine == 'pyhmmer':
             try:
                 import pyhmmer  # noqa: F401
             except ImportError:
