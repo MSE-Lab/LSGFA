@@ -126,16 +126,27 @@ def get_parameters():
     args = parser.parse_args()  # general options
 
     # 一些参数判断和处理
-    if not os.path.isfile(args.pfam_db):  # 判断db是否存在
-        message(text=f'Pfam database file not found: {args.pfam_db}', label='Error')
-        sys.exit(1)
     if args.search == 'hmmscan':  # 检查database和所选的软件是否对应
-        if not os.path.basename(args.pfam_db).endswith("hmm"):
-            message(text=f'Expected database file name: Pfam-A.hmm', label='Warning')
+        if not os.path.isfile(args.pfam_db):
+            message(text=f'Pfam database file not found: {args.pfam_db}', label='Error')
             sys.exit(1)
+        if not args.pfam_db.endswith('.hmm'):
+            message(text=f'-search hmmscan expects a Pfam-A.hmm file, got: {args.pfam_db}', label='Error')
+            sys.exit(1)
+        if args.hmm_engine == 'hmmscan':
+            missing = [args.pfam_db + ext for ext in ('.h3f', '.h3i', '.h3m', '.h3p')
+                       if not os.path.isfile(args.pfam_db + ext)]
+            if missing:
+                message(text=f'hmmpress index files missing: {", ".join(missing)}. '
+                             f'Run: hmmpress {args.pfam_db}', label='Error')
+                sys.exit(1)
     elif args.search == 'mmseqs-search':
-        if os.path.basename(args.pfam_db).endswith('hmm'):
-            message(text=f'Please check your database.', label='Warning')
+        if args.pfam_db.endswith('.hmm'):
+            message(text='-db looks like an HMM file; use -search hmmscan, '
+                         'or give an mmseqs database for -search mmseqs-search.', label='Error')
+            sys.exit(1)
+        if not os.path.isfile(args.pfam_db + '.dbtype'):
+            message(text=f'mmseqs database not found: {args.pfam_db}.dbtype does not exist', label='Error')
             sys.exit(1)
     # 判断参数值是否在区间内
     validate_range(args.identity,0,100,'identity')
