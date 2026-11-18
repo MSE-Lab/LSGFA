@@ -13,10 +13,14 @@ def check_software_installation():
     """检查所需第三方软件是否安装"""
     # 定义需要检查的软件列表
     required_software = [
-        {'name': 'hmmscan', 'command': 'hmmscan', 'test': '-h'},
-        {'name': 'mmseqs', 'command': 'mmseqs', 'test': '-h'},
-        {'name': 'diamond', 'command': 'diamond', 'test': 'help'},
-        {'name': 'mcl', 'command': 'mcl', 'test': '-h'},
+        {'name': 'hmmscan', 'command': 'hmmscan', 'test': '-h',
+         'install_hint': 'conda install -c bioconda hmmer'},
+        {'name': 'mmseqs', 'command': 'mmseqs', 'test': '-h',
+         'install_hint': 'conda install -c bioconda mmseqs2'},
+        {'name': 'diamond', 'command': 'diamond', 'test': 'help',
+         'install_hint': 'conda install -c bioconda diamond'},
+        {'name': 'mcl', 'command': 'mcl', 'test': '-h',
+         'install_hint': 'conda install -c bioconda mcl'},
     ]
 
     missing_software = []
@@ -53,7 +57,7 @@ def check_software_installation():
 
         for i, sw in enumerate(missing_software, 1):
             print(f"{i}. {sw['name']} ({sw['command']})")
-            print(f"   Installation hint: {sw['install_hint']}")
+            print(f"   Installation hint: {sw.get('install_hint', 'see README')}")
 
         # 提供额外的帮助信息
         print("\nTroubleshooting tips:")
